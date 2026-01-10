@@ -1,9 +1,6 @@
-// 📁 ARQUIVO: app/page.tsx
-// ⚠️ SUBSTITUIR O ARQUIVO EXISTENTE POR ESTE
-
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './globals.css'
 
 export default function Home() {
@@ -11,6 +8,7 @@ export default function Home() {
   const [profiles, setProfiles] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [selectedProfile, setSelectedProfile] = useState(null)
 
   const formatNumber = (num) => {
     if (num >= 1000000) {
@@ -74,7 +72,6 @@ export default function Home() {
     }
   }
 
-  // 🔑 MUDANÇA PRINCIPAL: Função de fallback para imagens
   const handleImageError = (e, username) => {
     console.error('Erro ao carregar imagem para:', username)
     e.target.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
@@ -85,7 +82,7 @@ export default function Home() {
       <div className="card">
         <div className="header">
           <div className="logo">⚡</div>
-          <h1>Grupo Power</h1>
+          <h1>Insta do Grupo</h1>
           <p className="subtitle">Descubra o alcance total do seu grupo</p>
         </div>
 
@@ -114,14 +111,7 @@ export default function Home() {
             </div>
           )}
 
-          {profiles.length === 0 && (
-            <div className="info-box">
-              <strong>✨ Como funciona:</strong>
-              1. Adicione os @usernames dos membros do grupo<br/>
-              2. Veja o alcance total somado em tempo real<br/>
-              3. Compartilhe o poder do seu grupo!
-            </div>
-          )}
+
         </form>
 
         {profiles.length > 0 && (
@@ -136,36 +126,306 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="profiles-grid">
-              {profiles.map((profile) => (
-                <div key={profile.username} className="profile-card">
-                  <button 
-                    className="remove-btn"
-                    onClick={() => handleRemove(profile.username)}
-                    title="Remover perfil"
-                  >
-                    ×
-                  </button>
-                  <img 
-                    src={profile.profilePic}
-                    alt={profile.username}
-                    className="profile-pic"
-                    onError={(e) => handleImageError(e, profile.username)}
-                    loading="lazy"
-                  />
-                  <div className="profile-username">@{profile.username}</div>
-                  <div className="profile-followers">
-                    {formatNumber(profile.followers)} seguidores
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ProfilesArena 
+              profiles={profiles}
+              onRemove={handleRemove}
+              onImageError={handleImageError}
+              onProfileClick={setSelectedProfile}
+            />
 
             <button className="btn btn-secondary" onClick={handleReset}>
               🔄 Resetar Grupo
             </button>
           </div>
         )}
+
+        {selectedProfile && (
+          <ProfileModal 
+            profile={selectedProfile}
+            onClose={() => setSelectedProfile(null)}
+            onImageError={handleImageError}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }) {
+  return (
+    <div className="profiles-arena">
+      {profiles.map((profile) => (
+        <MovingProfile 
+          key={profile.username}
+          profile={profile}
+          onRemove={onRemove}
+          onImageError={onImageError}
+          onProfileClick={onProfileClick}
+        />
+      ))}
+    </div>
+  )
+}
+
+function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
+  const containerRef = useRef(null)
+  const animationRef = useRef(null)
+  const [isHovered, setIsHovered] = useState(false)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [tooltipPosition, setTooltipPosition] = useState('top') // 'top' ou 'bottom'
+  const velocityRef = useRef({ x: 0, y: 0 })
+  const isInitializedRef = useRef(false)
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const arena = containerRef.current.parentElement
+    const arenaWidth = arena.offsetWidth
+    const arenaHeight = arena.offsetHeight
+    const imageSize = 70 // Tamanho da imagem (70px)
+
+    // Posição inicial aleatória (apenas uma vez)
+    if (!isInitializedRef.current) {
+      const initialX = Math.random() * (arenaWidth - imageSize)
+      const initialY = Math.random() * (arenaHeight - imageSize)
+      setPosition({ x: initialX, y: initialY })
+
+      // Velocidade inicial aleatória (pixels por frame)
+      const speed = 0.8 + Math.random() * 1.2 // Velocidade entre 0.8 e 2 px/frame
+      const angle = Math.random() * Math.PI * 2 // Ângulo aleatório
+      velocityRef.current = {
+        x: Math.cos(angle) * speed,
+        y: Math.sin(angle) * speed
+      }
+      
+      isInitializedRef.current = true
+    }
+
+    const animate = () => {
+      // Se estiver com hover, não atualiza a posição mas continua o loop
+      if (isHovered) {
+        animationRef.current = requestAnimationFrame(animate)
+        return
+      }
+
+      setPosition(prev => {
+        let newX = prev.x + velocityRef.current.x
+        let newY = prev.y + velocityRef.current.y
+
+        // Colisão com bordas e mudança de direção
+        if (newX <= 0 || newX >= arenaWidth - imageSize) {
+          velocityRef.current.x *= -1
+          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize))
+        }
+        if (newY <= 0 || newY >= arenaHeight - imageSize) {
+          velocityRef.current.y *= -1
+          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize))
+        }
+
+        return { x: newX, y: newY }
+      })
+
+      animationRef.current = requestAnimationFrame(animate)
+    }
+
+    animationRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+    }
+  }, [isHovered])
+
+  // Detectar se está perto do topo quando hover acontece
+  useEffect(() => {
+    if (isHovered && position.y < 100) {
+      setTooltipPosition('bottom')
+    } else {
+      setTooltipPosition('top')
+    }
+  }, [isHovered, position.y])
+
+  const formatNumber = (num) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M'
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K'
+    }
+    return num.toString()
+  }
+
+  return (
+    <div 
+      ref={containerRef}
+      className="profile-pic-container"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <button 
+        className="remove-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove(profile.username)
+        }}
+        title="Remover perfil"
+      >
+        ×
+      </button>
+      
+      <div className={`profile-info ${tooltipPosition === 'bottom' ? 'profile-info-bottom' : ''}`}>
+        <div className="profile-username">@{profile.username}</div>
+        <div className="profile-followers">
+          {formatNumber(profile.followers)} seguidores
+        </div>
+      </div>
+      
+      <img 
+        src={profile.profilePic}
+        alt={profile.username}
+        className="profile-pic"
+        onError={(e) => onImageError(e, profile.username)}
+        onClick={(e) => {
+          e.stopPropagation()
+          onProfileClick(profile)
+        }}
+        loading="lazy"
+      />
+    </div>
+  )
+}
+
+function ProfileModal({ profile, onClose, onImageError }) {
+  const formatNumber = (num) => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M'
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K'
+    }
+    return num.toString()
+  }
+
+  // Fechar modal ao clicar no overlay
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
+  // Fechar modal ao pressionar ESC
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        onClose()
+      }
+    }
+    
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
+  return (
+    <div className="modal-overlay" onClick={handleOverlayClick}>
+      <div className="modal-content">
+        <button className="modal-close" onClick={onClose}>
+          ×
+        </button>
+
+        <div className="modal-header">
+          <img 
+            src={profile.profilePic}
+            alt={profile.username}
+            className="modal-profile-pic"
+            onError={(e) => onImageError(e, profile.username)}
+          />
+          <div className="modal-username">@{profile.username}</div>
+          <div className="modal-fullname">{profile.fullName || profile.username}</div>
+        </div>
+
+        <div className="modal-stats">
+          <div className="stat-item">
+            <div className="stat-number">{formatNumber(profile.posts || 0)}</div>
+            <div className="stat-label">Posts</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-number">{formatNumber(profile.followers)}</div>
+            <div className="stat-label">Seguidores</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-number">{formatNumber(profile.following || 0)}</div>
+            <div className="stat-label">Seguindo</div>
+          </div>
+        </div>
+
+        <div className="modal-bio-section">
+          <div className="modal-bio-label">Biografia</div>
+          {profile.biography ? (
+            <div className="modal-bio-text">{profile.biography}</div>
+          ) : (
+            <div className="modal-bio-empty">Nenhuma biografia disponível</div>
+          )}
+        </div>
+
+        {profile.recentPosts && profile.recentPosts.length > 0 && (
+          <div className="modal-posts-section">
+            <div className="modal-posts-label">Postagens Recentes</div>
+            <div className="modal-posts-grid">
+              {profile.recentPosts.map((post) => (
+                <a
+                  key={post.id}
+                  href={`https://www.instagram.com/p/${post.shortcode}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="modal-post-item"
+                >
+                  <img 
+                    src={post.imageUrl}
+                    alt={`Post de @${profile.username}`}
+                    className="modal-post-image"
+                    onError={(e) => {
+                      e.target.src = 'https://via.placeholder.com/300x300/0a0a0f/00bfff?text=Imagem+indisponível'
+                    }}
+                  />
+                  {post.isVideo && (
+                    <div className="modal-video-icon">▶️</div>
+                  )}
+                  <div className="modal-post-overlay">
+                    <div className="modal-post-stat">
+                      ❤️ {formatNumber(post.likes)}
+                    </div>
+                    <div className="modal-post-stat">
+                      💬 {formatNumber(post.comments)}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {profile.recentPosts && profile.recentPosts.length === 0 && (
+          <div className="modal-posts-section">
+            <div className="modal-posts-label">Postagens Recentes</div>
+            <div className="modal-no-posts">
+              Nenhuma postagem disponível
+            </div>
+          </div>
+        )}
+
+        <a 
+          href={`https://www.instagram.com/${profile.username}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="modal-link-btn"
+        >
+          📸 Ver no Instagram
+        </a>
       </div>
     </div>
   )
