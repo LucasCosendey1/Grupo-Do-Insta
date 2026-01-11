@@ -43,18 +43,17 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/scrape?username=${cleanUsername}`)
+      const data = await response.json()
       
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Erro ao buscar perfil')
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Erro ao buscar perfil')
       }
 
-      const data = await response.json()
       setProfiles([...profiles, data])
       setUsername('')
       
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'Não foi possível carregar o perfil')
     } finally {
       setIsLoading(false)
     }
@@ -111,7 +110,14 @@ export default function Home() {
             </div>
           )}
 
-
+          {profiles.length === 0 && (
+            <div className="info-box">
+              <strong>✨ Como funciona:</strong>
+              1. Adicione os @usernames dos membros do grupo<br/>
+              2. Veja o alcance total somado em tempo real<br/>
+              3. Compartilhe o poder do seu grupo!
+            </div>
+          )}
         </form>
 
         {profiles.length > 0 && (
@@ -152,6 +158,15 @@ export default function Home() {
 }
 
 function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }) {
+  const [positions, setPositions] = useState({})
+
+  const updatePosition = (username, position) => {
+    setPositions(prev => ({
+      ...prev,
+      [username]: position
+    }))
+  }
+
   return (
     <div className="profiles-arena">
       {profiles.map((profile) => (
@@ -161,38 +176,66 @@ function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }) {
           onRemove={onRemove}
           onImageError={onImageError}
           onProfileClick={onProfileClick}
+          allPositions={positions}
+          updatePosition={updatePosition}
         />
       ))}
     </div>
   )
 }
 
-function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
+function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition }) {
   const containerRef = useRef(null)
   const animationRef = useRef(null)
   const [isHovered, setIsHovered] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [tooltipPosition, setTooltipPosition] = useState('top') // 'top' ou 'bottom'
+  const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
+
+  const imageSize = 70
+
+  const checkCollision = (pos1, pos2) => {
+    const dx = pos1.x - pos2.x
+    const dy = pos1.y - pos2.y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    return distance < imageSize
+  }
+
+  const resolveCollision = (myPos, otherPos, myVel) => {
+    const dx = myPos.x - otherPos.x
+    const dy = myPos.y - otherPos.y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    
+    if (distance === 0) return myVel
+
+    const nx = dx / distance
+    const ny = dy / distance
+    const dotProduct = myVel.x * nx + myVel.y * ny
+    
+    return {
+      x: myVel.x - 2 * dotProduct * nx,
+      y: myVel.y - 2 * dotProduct * ny
+    }
+  }
 
   useEffect(() => {
     if (!containerRef.current) return
 
     const arena = containerRef.current.parentElement
+    if (!arena) return
+    
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
-    const imageSize = 70 // Tamanho da imagem (70px)
 
-    // Posição inicial aleatória (apenas uma vez)
     if (!isInitializedRef.current) {
       const initialX = Math.random() * (arenaWidth - imageSize)
       const initialY = Math.random() * (arenaHeight - imageSize)
       setPosition({ x: initialX, y: initialY })
+      updatePosition(profile.username, { x: initialX, y: initialY })
 
-      // Velocidade inicial aleatória (pixels por frame)
-      const speed = 0.8 + Math.random() * 1.2 // Velocidade entre 0.8 e 2 px/frame
-      const angle = Math.random() * Math.PI * 2 // Ângulo aleatório
+      const speed = 1 + Math.random() * 1.5
+      const angle = Math.random() * Math.PI * 2
       velocityRef.current = {
         x: Math.cos(angle) * speed,
         y: Math.sin(angle) * speed
@@ -202,7 +245,6 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
     }
 
     const animate = () => {
-      // Se estiver com hover, não atualiza a posição mas continua o loop
       if (isHovered) {
         animationRef.current = requestAnimationFrame(animate)
         return
@@ -212,7 +254,6 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
 
-        // Colisão com bordas e mudança de direção
         if (newX <= 0 || newX >= arenaWidth - imageSize) {
           velocityRef.current.x *= -1
           newX = Math.max(0, Math.min(newX, arenaWidth - imageSize))
@@ -222,7 +263,28 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
           newY = Math.max(0, Math.min(newY, arenaHeight - imageSize))
         }
 
-        return { x: newX, y: newY }
+        const newPos = { x: newX, y: newY }
+
+        Object.entries(allPositions).forEach(([username, otherPos]) => {
+          if (username !== profile.username && otherPos) {
+            if (checkCollision(newPos, otherPos)) {
+              velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
+              
+              const dx = newPos.x - otherPos.x
+              const dy = newPos.y - otherPos.y
+              const distance = Math.sqrt(dx * dx + dy * dy)
+              
+              if (distance > 0) {
+                const pushDistance = (imageSize - distance) / 2
+                newPos.x += (dx / distance) * pushDistance
+                newPos.y += (dy / distance) * pushDistance
+              }
+            }
+          }
+        })
+
+        updatePosition(profile.username, newPos)
+        return newPos
       })
 
       animationRef.current = requestAnimationFrame(animate)
@@ -235,16 +297,34 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [isHovered])
+  }, [isHovered, allPositions, profile.username, updatePosition])
 
-  // Detectar se está perto do topo quando hover acontece
   useEffect(() => {
-    if (isHovered && position.y < 100) {
-      setTooltipPosition('bottom')
-    } else {
-      setTooltipPosition('top')
+    if (!isHovered || !containerRef.current) return
+
+    const arena = containerRef.current.parentElement
+    if (!arena) return
+
+    const arenaWidth = arena.offsetWidth
+    const arenaHeight = arena.offsetHeight
+    const tooltipHeight = 80
+    const tooltipWidth = 150
+
+    let vertical = 'top'
+    let horizontal = 'center'
+
+    if (position.y < tooltipHeight) {
+      vertical = 'bottom'
     }
-  }, [isHovered, position.y])
+
+    if (position.x < tooltipWidth / 2) {
+      horizontal = 'left'
+    } else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) {
+      horizontal = 'right'
+    }
+
+    setTooltipPosition({ vertical, horizontal })
+  }, [isHovered, position])
 
   const formatNumber = (num) => {
     if (num >= 1000000) {
@@ -254,6 +334,19 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
       return (num / 1000).toFixed(1) + 'K'
     }
     return num.toString()
+  }
+
+  const getTooltipClass = () => {
+    const classes = ['profile-info']
+    if (tooltipPosition.vertical === 'bottom') {
+      classes.push('profile-info-bottom')
+    }
+    if (tooltipPosition.horizontal === 'left') {
+      classes.push('profile-info-left')
+    } else if (tooltipPosition.horizontal === 'right') {
+      classes.push('profile-info-right')
+    }
+    return classes.join(' ')
   }
 
   return (
@@ -278,7 +371,7 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick }) {
         ×
       </button>
       
-      <div className={`profile-info ${tooltipPosition === 'bottom' ? 'profile-info-bottom' : ''}`}>
+      <div className={getTooltipClass()}>
         <div className="profile-username">@{profile.username}</div>
         <div className="profile-followers">
           {formatNumber(profile.followers)} seguidores
@@ -311,14 +404,12 @@ function ProfileModal({ profile, onClose, onImageError }) {
     return num.toString()
   }
 
-  // Fechar modal ao clicar no overlay
   const handleOverlayClick = (e) => {
     if (e.target === e.currentTarget) {
       onClose()
     }
   }
 
-  // Fechar modal ao pressionar ESC
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
