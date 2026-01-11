@@ -180,7 +180,7 @@ export async function GET(request) {
           recentPosts.push({
             id: post.id,
             shortcode: post.shortcode,
-            imageUrl: `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`,
+            imageUrl: `/api/image-proxy?url=${encodeURIComponent(imageUrl)}&username=${username}`,
             likes: post.edge_liked_by?.count || 0,
             comments: post.edge_media_to_comment?.count || 0,
             isVideo: post.is_video || false,

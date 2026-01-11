@@ -3,14 +3,37 @@
 import { useState, useEffect, useRef } from 'react'
 import './globals.css'
 
+interface Profile {
+  username: string
+  fullName: string
+  profilePic: string
+  followers: number
+  following: number
+  posts: number
+  biography: string
+  isPrivate: boolean
+  isVerified: boolean
+  recentPosts: RecentPost[]
+}
+
+interface RecentPost {
+  id: string
+  shortcode: string
+  imageUrl: string
+  likes: number
+  comments: number
+  isVideo: boolean
+  caption: string
+}
+
 export default function Home() {
   const [username, setUsername] = useState('')
-  const [profiles, setProfiles] = useState([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [selectedProfile, setSelectedProfile] = useState(null)
+  const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
 
-  const formatNumber = (num) => {
+  const formatNumber = (num: number): string => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M'
     }
@@ -20,11 +43,11 @@ export default function Home() {
     return num.toString()
   }
 
-  const getTotalFollowers = () => {
+  const getTotalFollowers = (): number => {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     
     if (!username.trim()) {
@@ -53,13 +76,13 @@ export default function Home() {
       setUsername('')
       
     } catch (err) {
-      setError(err.message || 'Não foi possível carregar o perfil')
+      setError(err instanceof Error ? err.message : 'Não foi possível carregar o perfil')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleRemove = (usernameToRemove) => {
+  const handleRemove = (usernameToRemove: string) => {
     setProfiles(profiles.filter(p => p.username !== usernameToRemove))
   }
 
@@ -71,9 +94,9 @@ export default function Home() {
     }
   }
 
-  const handleImageError = (e, username) => {
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
     console.error('Erro ao carregar imagem para:', username)
-    e.target.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
+    e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
   }
 
   return (
@@ -157,10 +180,17 @@ export default function Home() {
   )
 }
 
-function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }) {
-  const [positions, setPositions] = useState({})
+interface ProfilesArenaProps {
+  profiles: Profile[]
+  onRemove: (username: string) => void
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
+  onProfileClick: (profile: Profile) => void
+}
 
-  const updatePosition = (username, position) => {
+function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }: ProfilesArenaProps) {
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+
+  const updatePosition = (username: string, position: { x: number; y: number }) => {
     setPositions(prev => ({
       ...prev,
       [username]: position
@@ -184,9 +214,18 @@ function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }) {
   )
 }
 
-function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition }) {
-  const containerRef = useRef(null)
-  const animationRef = useRef(null)
+interface MovingProfileProps {
+  profile: Profile
+  onRemove: (username: string) => void
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
+  onProfileClick: (profile: Profile) => void
+  allPositions: Record<string, { x: number; y: number }>
+  updatePosition: (username: string, position: { x: number; y: number }) => void
+}
+
+function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition }: MovingProfileProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
@@ -195,14 +234,14 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
 
   const imageSize = 70
 
-  const checkCollision = (pos1, pos2) => {
+  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }): boolean => {
     const dx = pos1.x - pos2.x
     const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
     return distance < imageSize
   }
 
-  const resolveCollision = (myPos, otherPos, myVel) => {
+  const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
     const dx = myPos.x - otherPos.x
     const dy = myPos.y - otherPos.y
     const distance = Math.sqrt(dx * dx + dy * dy)
@@ -326,7 +365,7 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position])
 
-  const formatNumber = (num) => {
+  const formatNumber = (num: number): string => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M'
     }
@@ -336,7 +375,7 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
     return num.toString()
   }
 
-  const getTooltipClass = () => {
+  const getTooltipClass = (): string => {
     const classes = ['profile-info']
     if (tooltipPosition.vertical === 'bottom') {
       classes.push('profile-info-bottom')
@@ -393,8 +432,14 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
   )
 }
 
-function ProfileModal({ profile, onClose, onImageError }) {
-  const formatNumber = (num) => {
+interface ProfileModalProps {
+  profile: Profile
+  onClose: () => void
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
+}
+
+function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
+  const formatNumber = (num: number): string => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1) + 'M'
     }
@@ -404,14 +449,14 @@ function ProfileModal({ profile, onClose, onImageError }) {
     return num.toString()
   }
 
-  const handleOverlayClick = (e) => {
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
       onClose()
     }
   }
 
   useEffect(() => {
-    const handleEscape = (e) => {
+    const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose()
       }
@@ -480,7 +525,7 @@ function ProfileModal({ profile, onClose, onImageError }) {
                     alt={`Post de @${profile.username}`}
                     className="modal-post-image"
                     onError={(e) => {
-                      e.target.src = 'https://via.placeholder.com/300x300/0a0a0f/00bfff?text=Imagem+indisponível'
+                      e.currentTarget.src = 'https://via.placeholder.com/300x300/0a0a0f/00bfff?text=Imagem+indisponível'
                     }}
                   />
                   {post.isVideo && (
