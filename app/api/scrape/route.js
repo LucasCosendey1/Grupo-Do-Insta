@@ -154,6 +154,11 @@ export async function GET(request) {
     const user = data.data.user
     
     console.log('✅ Perfil encontrado:', user.username)
+    console.log('📊 Dados coletados:')
+    console.log('  - Posts:', user.edge_owner_to_timeline_media?.count || 0)
+    console.log('  - Seguidores:', user.edge_followed_by?.count || 0)
+    console.log('  - Seguindo:', user.edge_follow?.count || 0)
+    console.log('  - Bio:', user.biography || '(vazia)')
     
     // Foto de perfil com proxy
     const profilePicUrl = user.profile_pic_url_hd || user.profile_pic_url
@@ -161,35 +166,7 @@ export async function GET(request) {
       ? `/api/image-proxy?url=${encodeURIComponent(profilePicUrl)}&username=${username}`
       : `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff`
     
-    // Buscar as 3 postagens mais recentes
-    const recentPosts = []
-    if (user.edge_owner_to_timeline_media && user.edge_owner_to_timeline_media.edges) {
-      const posts = user.edge_owner_to_timeline_media.edges.slice(0, 3)
-      
-      posts.forEach(postEdge => {
-        const post = postEdge.node
-        let imageUrl = null
-        
-        if (post.display_url) {
-          imageUrl = post.display_url
-        } else if (post.thumbnail_src) {
-          imageUrl = post.thumbnail_src
-        }
-        
-        if (imageUrl) {
-          recentPosts.push({
-            id: post.id,
-            shortcode: post.shortcode,
-            imageUrl: `/api/image-proxy?url=${encodeURIComponent(imageUrl)}&username=${username}`,
-            likes: post.edge_liked_by?.count || 0,
-            comments: post.edge_media_to_comment?.count || 0,
-            isVideo: post.is_video || false,
-            caption: post.edge_media_to_caption?.edges[0]?.node?.text || ''
-          })
-        }
-      })
-    }
-    
+    // RETORNAR APENAS OS DADOS ESSENCIAIS (SEM POSTAGENS RECENTES)
     return Response.json({
       username: user.username,
       fullName: user.full_name || user.username,
@@ -200,7 +177,6 @@ export async function GET(request) {
       biography: user.biography || '',
       isPrivate: user.is_private || false,
       isVerified: user.is_verified || false,
-      recentPosts: recentPosts,
     })
 
   } catch (error) {

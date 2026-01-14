@@ -1,5 +1,5 @@
-// API para buscar perfis do Instagram (simulação por enquanto)
-// Na versão de produção, integrar com a API real do Instagram
+// API para buscar perfis do Instagram
+// Agora integrada com a API scrape para buscar dados reais
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
@@ -13,44 +13,79 @@ export async function GET(request) {
   }
 
   try {
-    // Por enquanto, vamos simular com alguns perfis de exemplo
-    // Na produção, isso buscaria na API real do Instagram
-    const mockProfiles = [
-      {
-        username: query,
-        fullName: `${query.charAt(0).toUpperCase() + query.slice(1)} Silva`,
-        profilePic: `https://ui-avatars.com/api/?name=${query}&size=200&background=00bfff&color=fff`,
-        followers: Math.floor(Math.random() * 10000) + 500,
-        isVerified: false
-      },
-      {
-        username: `${query}_oficial`,
-        fullName: `${query.charAt(0).toUpperCase() + query.slice(1)} Oficial`,
-        profilePic: `https://ui-avatars.com/api/?name=${query}_oficial&size=200&background=ff6b6b&color=fff`,
-        followers: Math.floor(Math.random() * 50000) + 10000,
-        isVerified: true
-      },
-      {
-        username: `${query}123`,
-        fullName: `${query} Real`,
-        profilePic: `https://ui-avatars.com/api/?name=${query}123&size=200&background=4ecdc4&color=fff`,
-        followers: Math.floor(Math.random() * 5000) + 100,
-        isVerified: false
+    console.log('🔍 Buscando perfil:', query)
+    
+    // Fazer requisição para a API scrape interna
+    const cleanUsername = query.replace('@', '').trim().toLowerCase()
+    
+    // Construir URL absoluta para a API scrape
+    const protocol = request.headers.get('x-forwarded-proto') || 'http'
+    const host = request.headers.get('host') || 'localhost:3000'
+    const scrapeUrl = `${protocol}://${host}/api/scrape?username=${encodeURIComponent(cleanUsername)}`
+    
+    console.log('📡 Chamando scrape API:', scrapeUrl)
+    
+    const scrapeResponse = await fetch(scrapeUrl, {
+      headers: {
+        'User-Agent': request.headers.get('user-agent') || 'Mozilla/5.0'
       }
-    ]
-
-    // Simular delay de rede
-    await new Promise(resolve => setTimeout(resolve, 300))
-
-    return Response.json({
-      profiles: mockProfiles,
-      query: query
     })
 
+    if (scrapeResponse.ok) {
+      const profileData = await scrapeResponse.json()
+      
+      // Verificar se há erro na resposta
+      if (profileData.error) {
+        console.log('❌ Erro do scrape:', profileData.error)
+        return Response.json({
+          profiles: [],
+          query: query,
+          error: profileData.error
+        })
+      }
+      
+      console.log('✅ Perfil encontrado:', profileData.username)
+      console.log('📊 Dados completos:')
+      console.log('  - Posts:', profileData.posts)
+      console.log('  - Seguidores:', profileData.followers)
+      console.log('  - Seguindo:', profileData.following)
+      console.log('  - Bio:', profileData.biography ? 'Sim' : 'Não')
+      
+      // Retornar como array de perfis
+      return Response.json({
+        profiles: [{
+          username: profileData.username,
+          fullName: profileData.fullName,
+          profilePic: profileData.profilePic,
+          followers: profileData.followers,
+          following: profileData.following,
+          posts: profileData.posts,
+          biography: profileData.biography,
+          isVerified: profileData.isVerified,
+          isPrivate: profileData.isPrivate,
+          recentPosts: profileData.recentPosts || []
+        }],
+        query: query
+      })
+    } else {
+      console.log('❌ Falha ao buscar perfil')
+      
+      // Se falhar, retornar erro amigável
+      return Response.json({
+        profiles: [],
+        query: query,
+        error: 'Perfil não encontrado ou erro ao acessar Instagram'
+      })
+    }
+
   } catch (error) {
-    console.error('Erro na busca:', error)
+    console.error('❌ Erro na busca:', error)
     return Response.json(
-      { error: 'Erro ao buscar perfis', profiles: [] },
+      { 
+        error: 'Erro ao buscar perfis: ' + error.message, 
+        profiles: [],
+        query: query
+      },
       { status: 500 }
     )
   }

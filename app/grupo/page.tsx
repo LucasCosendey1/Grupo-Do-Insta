@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import '../globals.css'
 
 interface Profile {
@@ -13,51 +14,42 @@ interface Profile {
   biography: string
   isPrivate: boolean
   isVerified: boolean
-  recentPosts: RecentPost[]
 }
 
-interface RecentPost {
-  id: string
-  shortcode: string
-  imageUrl: string
-  likes: number
-  comments: number
-  isVideo: boolean
-  caption: string
-}
-
-// Interface para os dados do grupo (vinda do segundo código)
 interface GroupData {
   id: string
   name: string
-  icon: any
+  icon: {
+    id: string
+    emoji: string
+    name: string
+  }
   creator: any
   members: Profile[]
   createdAt: string
 }
 
-export default function Home() {
+export default function GrupoPage() {
   const [username, setUsername] = useState('')
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   
-  // Estado para armazenar os dados do grupo carregado
+  // DADOS DO GRUPO CARREGADOS DO LOCALSTORAGE
   const [groupData, setGroupData] = useState<GroupData | null>(null)
 
-  // EFEITO: Carrega o grupo salvo ao iniciar (Simulando usuário logado)
+  // CARREGAR GRUPO AO INICIAR
   useEffect(() => {
     const savedGroups = localStorage.getItem('groups')
     if (savedGroups) {
       try {
         const groups = JSON.parse(savedGroups)
         if (groups.length > 0) {
-          // Pega o último grupo criado/acessado
           const lastGroup = groups[groups.length - 1]
           setGroupData(lastGroup)
           
-          // Se o grupo tiver membros, já carrega eles como bolinhas
+          // Carregar membros do grupo se existirem
           if (lastGroup.members && lastGroup.members.length > 0) {
             setProfiles(lastGroup.members)
           }
@@ -68,9 +60,34 @@ export default function Home() {
     }
   }, [])
 
+  // SALVAR MEMBROS NO GRUPO SEMPRE QUE MUDAR
+  useEffect(() => {
+    if (groupData && profiles.length > 0) {
+      const savedGroups = localStorage.getItem('groups')
+      if (savedGroups) {
+        try {
+          const groups = JSON.parse(savedGroups)
+          const updatedGroups = groups.map((group: GroupData) => {
+            if (group.id === groupData.id) {
+              return { ...group, members: profiles }
+            }
+            return group
+          })
+          localStorage.setItem('groups', JSON.stringify(updatedGroups))
+        } catch (error) {
+          console.error('Erro ao salvar membros:', error)
+        }
+      }
+    }
+  }, [profiles, groupData])
+
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M'
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K'
+    }
     return num.toString()
   }
 
@@ -133,9 +150,17 @@ export default function Home() {
   return (
     <div className="container">
       <div className="card">
-        {/* HEADER MODIFICADO: Mostra Ícone e Nome do Grupo carregado */}
+        {/* BOTÃO VOLTAR */}
+        <Link href="/" className="btn-back">
+          <span className="back-arrow">←</span>
+          <span>Voltar</span>
+        </Link>
+
+        {/* HEADER COM DADOS DO GRUPO */}
         <div className="header">
-          <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
+          <div className="logo">
+            {groupData?.icon?.emoji || '⚡'}
+          </div>
           <h1>{groupData?.name || 'Insta do Grupo'}</h1>
           <p className="subtitle">Descubra o alcance total do seu grupo</p>
         </div>
@@ -160,7 +185,9 @@ export default function Home() {
           </button>
 
           {error && (
-            <div className="error">❌ {error}</div>
+            <div className="error">
+              ❌ {error}
+            </div>
           )}
 
           {profiles.length === 0 && (
@@ -176,16 +203,19 @@ export default function Home() {
         {profiles.length > 0 && (
           <div className="profiles-container">
             <div className="total-stats">
-              <div className="total-label">Alcance Total do Grupo</div>
-              <div className="total-number">
-                {formatNumber(getTotalFollowers())}
-              </div>
-              <div className="total-members">
-                {profiles.length} {profiles.length === 1 ? 'membro ativo' : 'membros ativos'}
+              <div className="stats-icon">📊</div>
+              <div className="stats-content">
+                <div className="total-label">Alcance Total do Grupo</div>
+                <div className="total-number">
+                  {formatNumber(getTotalFollowers())}
+                  <span className="followers-text">seguidores</span>
+                </div>
+                <div className="total-members">
+                  <span className="member-count">{profiles.length}</span> {profiles.length === 1 ? 'membro ativo' : 'membros ativos'}
+                </div>
               </div>
             </div>
 
-            {/* A ARENA DAS BOLINHAS */}
             <ProfilesArena 
               profiles={profiles}
               onRemove={handleRemove}
@@ -211,8 +241,6 @@ export default function Home() {
   )
 }
 
-// --- COMPONENTES DA ARENA (CÓDIGO 1) ---
-
 interface ProfilesArenaProps {
   profiles: Profile[]
   onRemove: (username: string) => void
@@ -231,22 +259,8 @@ function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }: Pro
   }
 
   return (
-    // Adicionei styles inline de backup para garantir que o retângulo exista
-    // caso o CSS não esteja carregando corretamente a classe .profiles-arena
-    <div 
-      className="profiles-arena" 
-      style={{ 
-        position: 'relative', 
-        width: '100%', 
-        height: '400px', // Altura fixa para garantir o "retângulo"
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: '16px',
-        overflow: 'hidden',
-        margin: '20px 0',
-        background: 'rgba(0,0,0,0.2)'
-      }}
-    >
-      {profiles.map((profile) => (
+    <div className="profiles-arena">
+      {profiles.map((profile, index) => (
         <MovingProfile 
           key={profile.username}
           profile={profile}
@@ -255,6 +269,7 @@ function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }: Pro
           onProfileClick={onProfileClick}
           allPositions={positions}
           updatePosition={updatePosition}
+          isAdmin={index === 0}
         />
       ))}
     </div>
@@ -268,9 +283,10 @@ interface MovingProfileProps {
   onProfileClick: (profile: Profile) => void
   allPositions: Record<string, { x: number; y: number }>
   updatePosition: (username: string, position: { x: number; y: number }) => void
+  isAdmin: boolean
 }
 
-function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition }: MovingProfileProps) {
+function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -279,13 +295,32 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
 
-  const imageSize = 70
+  const calculateImageSize = (followers: number): number => {
+    const MIN_SIZE = 50
+    const MAX_SIZE = 120
+    
+    if (followers <= 1000) {
+      return MIN_SIZE
+    } else if (followers >= 1000000) {
+      return MAX_SIZE
+    } else {
+      const logMin = Math.log10(1000)
+      const logMax = Math.log10(1000000)
+      const logCurrent = Math.log10(followers)
+      
+      const percentage = (logCurrent - logMin) / (logMax - logMin)
+      return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * percentage
+    }
+  }
 
-  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }): boolean => {
+  const imageSize = calculateImageSize(profile.followers)
+
+  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
     const dx = pos1.x - pos2.x
     const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
-    return distance < imageSize
+    const minDistance = (size1 + size2) / 2
+    return distance < minDistance
   }
 
   const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
@@ -353,7 +388,7 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
 
         Object.entries(allPositions).forEach(([username, otherPos]) => {
           if (username !== profile.username && otherPos) {
-            if (checkCollision(newPos, otherPos)) {
+            if (checkCollision(newPos, otherPos, imageSize, imageSize)) {
               velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
               
               const dx = newPos.x - otherPos.x
@@ -383,7 +418,7 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [isHovered, allPositions, profile.username, updatePosition])
+  }, [isHovered, allPositions, profile.username, updatePosition, imageSize])
 
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
@@ -410,19 +445,28 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
     }
 
     setTooltipPosition({ vertical, horizontal })
-  }, [isHovered, position])
+  }, [isHovered, position, imageSize])
 
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M'
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K'
+    }
     return num.toString()
   }
 
   const getTooltipClass = (): string => {
     const classes = ['profile-info']
-    if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
-    if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
-    else if (tooltipPosition.horizontal === 'right') classes.push('profile-info-right')
+    if (tooltipPosition.vertical === 'bottom') {
+      classes.push('profile-info-bottom')
+    }
+    if (tooltipPosition.horizontal === 'left') {
+      classes.push('profile-info-left')
+    } else if (tooltipPosition.horizontal === 'right') {
+      classes.push('profile-info-right')
+    }
     return classes.join(' ')
   }
 
@@ -433,15 +477,16 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
-        // Garante que é absoluto para poder se mover dentro da arena
-        position: 'absolute',
-        width: '70px',
-        height: '70px',
-        cursor: 'pointer'
+        width: `${imageSize}px`,
+        height: `${imageSize}px`,
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {isAdmin && (
+        <div className="admin-crown">👑</div>
+      )}
+      
       <button 
         className="remove-btn"
         onClick={(e) => {
@@ -453,12 +498,17 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
         ×
       </button>
       
-      <div className={getTooltipClass()}>
-        <div className="profile-username">@{profile.username}</div>
-        <div className="profile-followers">
-          {formatNumber(profile.followers)} seguidores
+      {isHovered && (
+        <div className={getTooltipClass()}>
+          <div className="profile-username">
+            @{profile.username}
+            {isAdmin && <span className="admin-badge"> 👑 ADM</span>}
+          </div>
+          <div className="profile-followers">
+            {formatNumber(profile.followers)} seguidores
+          </div>
         </div>
-      </div>
+      )}
       
       <img 
         src={profile.profilePic}
@@ -470,8 +520,6 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
           onProfileClick(profile)
         }}
         loading="lazy"
-        // Garante a "bolinha" visualmente
-        style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
       />
     </div>
   )
@@ -485,19 +533,28 @@ interface ProfileModalProps {
 
 function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1) + 'M'
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1) + 'K'
+    }
     return num.toString()
   }
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose()
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
   }
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+      }
     }
+    
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
@@ -505,17 +562,21 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-content">
-        <button className="modal-close" onClick={onClose}>×</button>
+        <button className="modal-close" onClick={onClose}>
+          ×
+        </button>
 
-        <div className="modal-header">
+        <div className="modal-header-compact">
           <img 
             src={profile.profilePic}
             alt={profile.username}
-            className="modal-profile-pic"
+            className="modal-profile-pic-small"
             onError={(e) => onImageError(e, profile.username)}
           />
-          <div className="modal-username">@{profile.username}</div>
-          <div className="modal-fullname">{profile.fullName || profile.username}</div>
+          <div className="modal-user-info">
+            <div className="modal-username">@{profile.username}</div>
+            <div className="modal-fullname">{profile.fullName || profile.username}</div>
+          </div>
         </div>
 
         <div className="modal-stats">
@@ -524,7 +585,7 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
             <div className="stat-label">Posts</div>
           </div>
           <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.followers)}</div>
+            <div className="stat-number">{formatNumber(profile.followers || 0)}</div>
             <div className="stat-label">Seguidores</div>
           </div>
           <div className="stat-item">
@@ -541,44 +602,6 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
             <div className="modal-bio-empty">Nenhuma biografia disponível</div>
           )}
         </div>
-
-        {profile.recentPosts && profile.recentPosts.length > 0 && (
-          <div className="modal-posts-section">
-            <div className="modal-posts-label">Postagens Recentes</div>
-            <div className="modal-posts-grid">
-              {profile.recentPosts.map((post) => (
-                <a
-                  key={post.id}
-                  href={`https://www.instagram.com/p/${post.shortcode}/`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="modal-post-item"
-                >
-                  <img 
-                    src={post.imageUrl}
-                    alt={`Post de @${profile.username}`}
-                    className="modal-post-image"
-                    onError={(e) => {
-                      e.currentTarget.src = 'https://via.placeholder.com/300x300/0a0a0f/00bfff?text=Imagem+indisponível'
-                    }}
-                  />
-                  {post.isVideo && <div className="modal-video-icon">▶️</div>}
-                  <div className="modal-post-overlay">
-                    <div className="modal-post-stat">❤️ {formatNumber(post.likes)}</div>
-                    <div className="modal-post-stat">💬 {formatNumber(post.comments)}</div>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {profile.recentPosts && profile.recentPosts.length === 0 && (
-          <div className="modal-posts-section">
-            <div className="modal-posts-label">Postagens Recentes</div>
-            <div className="modal-no-posts">Nenhuma postagem disponível</div>
-          </div>
-        )}
 
         <a 
           href={`https://www.instagram.com/${profile.username}`}
