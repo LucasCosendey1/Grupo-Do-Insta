@@ -13,9 +13,11 @@ let sessionCache = {
 // Função para fazer login e obter cookies
 async function loginInstagram() {
   try {
-    console.log('🔐 Fazendo login no Instagram...')
+    console.log('🔐 [LOGIN] Iniciando login no Instagram...')
+    console.log('👤 [LOGIN] Username:', INSTAGRAM_CREDENTIALS.username)
     
     // 1. Primeiro, pegar o CSRF token da página inicial
+    console.log('📄 [LOGIN] Buscando página inicial do Instagram...')
     const homeResponse = await fetch('https://www.instagram.com/', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -23,16 +25,31 @@ async function loginInstagram() {
       }
     })
     
+    console.log('📡 [LOGIN] Status da página inicial:', homeResponse.status)
+    
+    if (!homeResponse.ok) {
+      throw new Error(`Falha ao acessar Instagram: ${homeResponse.status}`)
+    }
+    
     const homeHtml = await homeResponse.text()
+    console.log('📝 [LOGIN] HTML recebido, tamanho:', homeHtml.length, 'caracteres')
+    
     const csrfMatch = homeHtml.match(/"csrf_token":"([^"]+)"/)
     const csrfToken = csrfMatch ? csrfMatch[1] : ''
+    
+    if (!csrfToken) {
+      console.error('❌ [LOGIN] CSRF token não encontrado no HTML')
+      throw new Error('CSRF token não encontrado')
+    }
     
     // Pegar cookies da página inicial
     const initialCookies = homeResponse.headers.get('set-cookie') || ''
     
-    console.log('✅ CSRF Token obtido:', csrfToken.substring(0, 20) + '...')
+    console.log('✅ [LOGIN] CSRF Token obtido:', csrfToken.substring(0, 20) + '...')
+    console.log('🍪 [LOGIN] Cookies iniciais recebidos:', initialCookies ? 'Sim' : 'Não')
     
     // 2. Fazer login
+    console.log('🔑 [LOGIN] Enviando credenciais...')
     const loginResponse = await fetch('https://www.instagram.com/api/v1/web/accounts/login/ajax/', {
       method: 'POST',
       headers: {
@@ -53,9 +70,13 @@ async function loginInstagram() {
       }).toString()
     })
     
+    console.log('📡 [LOGIN] Status do login:', loginResponse.status)
+    
     const loginData = await loginResponse.json()
+    console.log('📦 [LOGIN] Resposta do login:', JSON.stringify(loginData, null, 2))
     
     if (!loginData.authenticated) {
+      console.error('❌ [LOGIN] Autenticação falhou:', loginData.message || 'Credenciais inválidas')
       throw new Error('Falha no login: ' + (loginData.message || 'Credenciais inválidas'))
     }
     
@@ -73,7 +94,8 @@ async function loginInstagram() {
       })
     }
     
-    console.log('✅ Login realizado com sucesso!')
+    console.log('🍪 [LOGIN] Cookies extraídos:', Object.keys(cookies).length)
+    console.log('✅ [LOGIN] Login realizado com sucesso!')
     
     // Cachear por 2 horas
     sessionCache = {
@@ -84,7 +106,8 @@ async function loginInstagram() {
     return cookies
     
   } catch (error) {
-    console.error('❌ Erro no login:', error.message)
+    console.error('❌ [LOGIN] Erro no login:', error.message)
+    console.error('🔍 [LOGIN] Stack trace:', error.stack)
     throw error
   }
 }
@@ -93,10 +116,12 @@ async function loginInstagram() {
 async function getValidCookies() {
   // Verificar se tem cache válido
   if (sessionCache.cookies && sessionCache.expiresAt > Date.now()) {
-    console.log('✅ Usando sessão em cache')
+    console.log('✅ [CACHE] Usando sessão em cache')
+    console.log('⏰ [CACHE] Expira em:', new Date(sessionCache.expiresAt).toLocaleString('pt-BR'))
     return sessionCache.cookies
   }
   
+  console.log('🔄 [CACHE] Cache expirado ou inexistente, fazendo novo login...')
   // Fazer novo login
   return await loginInstagram()
 }
@@ -105,7 +130,13 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const username = searchParams.get('username')
 
+  console.log('\n=== NOVA REQUISIÇÃO ===')
+  console.log('🎯 [API] Username solicitado:', username)
+  console.log('🌍 [API] Ambiente:', process.env.VERCEL ? 'Vercel' : 'Local')
+  console.log('⏰ [API] Timestamp:', new Date().toLocaleString('pt-BR'))
+
   if (!username) {
+    console.error('❌ [API] Username não fornecido')
     return Response.json(
       { error: 'Username não fornecido' },
       { status: 400 }
@@ -113,6 +144,7 @@ export async function GET(request) {
   }
 
   try {
+    console.log('🔑 [API] Obtendo cookies de autenticação...')
     // Obter cookies autenticados
     const cookies = await getValidCookies()
     
@@ -121,10 +153,12 @@ export async function GET(request) {
       .map(([key, value]) => `${key}=${value}`)
       .join('; ')
     
-    console.log('🔍 Buscando perfil:', username)
+    console.log('🍪 [API] Cookies preparados, tamanho:', cookieString.length, 'caracteres')
+    console.log('🔍 [API] Buscando perfil:', username)
     
     // Buscar perfil com autenticação
     const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`
+    console.log('🌐 [API] URL:', url)
     
     const response = await fetch(url, {
       headers: {
@@ -141,20 +175,29 @@ export async function GET(request) {
       }
     })
 
+    console.log('📡 [API] Status da resposta:', response.status)
+    console.log('📋 [API] Headers da resposta:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2))
+
     if (!response.ok) {
-      throw new Error('Erro ao buscar perfil')
+      console.error('❌ [API] Erro ao buscar perfil, status:', response.status)
+      const errorText = await response.text()
+      console.error('📄 [API] Resposta de erro:', errorText.substring(0, 500))
+      throw new Error(`Erro ao buscar perfil: ${response.status}`)
     }
 
     const data = await response.json()
+    console.log('📦 [API] Dados recebidos:', JSON.stringify(data).substring(0, 200) + '...')
     
     if (!data.data || !data.data.user) {
+      console.error('❌ [API] Estrutura de dados inválida')
+      console.error('📄 [API] Dados completos:', JSON.stringify(data))
       throw new Error('Perfil não encontrado')
     }
 
     const user = data.data.user
     
-    console.log('✅ Perfil encontrado:', user.username)
-    console.log('📊 Dados coletados:')
+    console.log('✅ [API] Perfil encontrado:', user.username)
+    console.log('📊 [API] Dados coletados:')
     console.log('  - Posts:', user.edge_owner_to_timeline_media?.count || 0)
     console.log('  - Seguidores:', user.edge_followed_by?.count || 0)
     console.log('  - Seguindo:', user.edge_follow?.count || 0)
@@ -166,8 +209,7 @@ export async function GET(request) {
       ? `/api/image-proxy?url=${encodeURIComponent(profilePicUrl)}&username=${username}`
       : `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff`
     
-    // RETORNAR APENAS OS DADOS ESSENCIAIS (SEM POSTAGENS RECENTES)
-    return Response.json({
+    const result = {
       username: user.username,
       fullName: user.full_name || user.username,
       profilePic: proxiedImageUrl,
@@ -177,15 +219,27 @@ export async function GET(request) {
       biography: user.biography || '',
       isPrivate: user.is_private || false,
       isVerified: user.is_verified || false,
-    })
+    }
+    
+    console.log('✅ [API] Retornando dados do perfil')
+    console.log('=== FIM DA REQUISIÇÃO ===\n')
+    
+    return Response.json(result)
 
   } catch (error) {
-    console.error('❌ API Error:', error.message)
+    console.error('❌ [API] ERRO FATAL:', error.message)
+    console.error('🔍 [API] Stack trace:', error.stack)
+    console.log('=== FIM DA REQUISIÇÃO (COM ERRO) ===\n')
     
     return Response.json(
       { 
         error: 'Não foi possível carregar o perfil: ' + error.message,
-        username: username 
+        username: username,
+        debug: {
+          message: error.message,
+          stack: error.stack,
+          timestamp: new Date().toISOString()
+        }
       },
       { status: 500 }
     )
