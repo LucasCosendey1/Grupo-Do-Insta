@@ -28,7 +28,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Carregar perfil do usuário
     const savedProfile = localStorage.getItem('userProfile')
     if (savedProfile) {
       try {
@@ -48,12 +47,10 @@ export default function Home() {
     try {
       setIsLoading(true)
       
-      // Buscar grupos do localStorage (temporário, até migrar tudo pro DB)
       const savedGroups = localStorage.getItem('groups')
       if (savedGroups) {
         const groups = JSON.parse(savedGroups)
         
-        // Filtrar grupos onde o usuário é membro
         const userGroupsList = groups
           .filter((g: any) => 
             g.members?.some((m: any) => 
@@ -76,10 +73,76 @@ export default function Home() {
     }
   }
 
+const handleLeaveGroup = async (groupId: string, groupName: string) => {
+  if (!userProfile) return
+
+  const confirm = window.confirm(
+    `Tem certeza que deseja sair do grupo "${groupName}"?`
+  )
+
+  if (!confirm) return
+
+  try {
+    const response = await fetch('/api/grupos/sair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupId: groupId,
+        username: userProfile.username
+      })
+    })
+
+    const data = await response.json()
+
+    // Se grupo não existe no banco (grupo antigo do localStorage)
+    if (!response.ok && data.error?.includes('não encontrado')) {
+      console.log('⚠️ Grupo antigo (só no localStorage), removendo localmente...')
+      
+      // Remover apenas do localStorage
+      const savedGroups = localStorage.getItem('groups')
+      if (savedGroups) {
+        const groups = JSON.parse(savedGroups)
+        const updatedGroups = groups.filter((g: any) => g.id !== groupId)
+        localStorage.setItem('groups', JSON.stringify(updatedGroups))
+      }
+
+      // Atualizar interface
+      setUserGroups(userGroups.filter(g => g.id !== groupId))
+      
+      alert('✅ Você saiu do grupo!')
+      return
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Erro ao sair do grupo')
+    }
+
+    if (data.groupDeleted) {
+      alert('🗑️ Você era o último membro. O grupo foi deletado.')
+    } else {
+      alert('✅ Você saiu do grupo com sucesso!')
+    }
+
+    // Remover do localStorage também
+    const savedGroups = localStorage.getItem('groups')
+    if (savedGroups) {
+      const groups = JSON.parse(savedGroups)
+      const updatedGroups = groups.filter((g: any) => g.id !== groupId)
+      localStorage.setItem('groups', JSON.stringify(updatedGroups))
+    }
+
+    // Atualizar interface
+    setUserGroups(userGroups.filter(g => g.id !== groupId))
+
+  } catch (error) {
+    console.error('❌ Erro ao sair do grupo:', error)
+    alert('Erro ao sair do grupo: ' + (error instanceof Error ? error.message : 'Erro desconhecido'))
+  }
+}
+
   return (
     <div className="container">
       <div className="card">
-        {/* Header com botão de login */}
         <div style={{ position: 'absolute', top: '24px', right: '24px' }}>
           {userProfile ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -143,7 +206,6 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* SEÇÃO: GRUPOS QUE VOCÊ FAZ PARTE */}
           {userProfile && (
             <div className="user-groups-section">
               <h2 className="section-title">
@@ -159,23 +221,34 @@ export default function Home() {
               ) : userGroups.length > 0 ? (
                 <div className="groups-grid">
                   {userGroups.map((group) => (
-                    <Link
-                      key={group.id}
-                      href={`/grupo/${group.id}`}
-                      className="group-card"
-                    >
-                      <div className="group-icon-large">
-                        {group.icon.emoji}
-                      </div>
-                      <div className="group-card-info">
-                        <h3 className="group-card-name">{group.name}</h3>
-                        <p className="group-card-members">
-                          <span className="members-icon">👥</span>
-                          {group.memberCount} {group.memberCount === 1 ? 'membro' : 'membros'}
-                        </p>
-                      </div>
-                      <div className="group-card-arrow">→</div>
-                    </Link>
+                    <div key={group.id} className="group-card-wrapper">
+                      <Link
+                        href={`/grupo/${group.id}`}
+                        className="group-card"
+                      >
+                        <div className="group-icon-large">
+                          {group.icon.emoji}
+                        </div>
+                        <div className="group-card-info">
+                          <h3 className="group-card-name">{group.name}</h3>
+                          <p className="group-card-members">
+                            <span className="members-icon">👥</span>
+                            {group.memberCount} {group.memberCount === 1 ? 'membro' : 'membros'}
+                          </p>
+                        </div>
+                        <div className="group-card-arrow">→</div>
+                      </Link>
+                      <button
+                        className="btn-leave-group"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          handleLeaveGroup(group.id, group.name)
+                        }}
+                        title="Sair do grupo"
+                      >
+                        🚪 Sair
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : (

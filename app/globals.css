@@ -1386,3 +1386,58 @@ h1 {
     font-size: 28px;
   }
 }
+
+/* ============================================ */
+/* BOTÃO SAIR DO GRUPO */
+/* ============================================ */
+
+.group-card-wrapper {
+  position: relative;
+}
+
+.btn-leave-group {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  color: #ff6b6b;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 10;
+  opacity: 0;
+}
+
+.group-card-wrapper:hover .btn-leave-group {
+  opacity: 1;
+}
+
+.btn-leave-group:hover {
+  background: rgba(255, 68, 68, 0.2);
+  border-color: #ff4444;
+  color: #ff4444;
+  transform: scale(1.05);
+}
+
+.btn-leave-group:active {
+  transform: scale(0.95);
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .btn-leave-group {
+    opacity: 1;
+    position: static;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .group-card-wrapper {
+    display: flex;
+    flex-direction: column;
+  }
+}

@@ -42,73 +42,72 @@ export default function GrupoPage() {
   // DADOS DO GRUPO CARREGADOS DO LOCALSTORAGE
   const [groupData, setGroupData] = useState<GroupData | null>(null)
 
-  // CARREGAR GRUPO AO INICIAR
-  useEffect(() => {
-    if (!groupId) return
-    
-    async function loadGroup() {
-      try {
-        console.log('🔍 Buscando grupo:', groupId)
-        
-        const response = await fetch(`/api/grupos/${groupId}`)
-        
-        if (!response.ok) {
-          throw new Error('Grupo não encontrado')
-        }
-        
-        const data = await response.json()
-        
-        if (data.success && data.group) {
-          // Carregar dados básicos do grupo
-          setGroupData({
-            id: data.group.id,
-            name: data.group.name,
-            icon: data.group.icon,
-            creator: data.group.creator,
-            members: [],
-            createdAt: data.group.createdAt
-          })
-          
-          // Buscar perfis completos de cada username
-// Buscar perfis completos de cada username
-const usernames = data.group.usernames || []
-console.log('👥 Carregando perfis:', usernames)
-
-// Garantir que criador vem primeiro
-const sortedUsernames = [...usernames]
-const creatorIndex = sortedUsernames.indexOf(data.group.creator)
-if (creatorIndex > 0) {
-  // Mover criador para o início
-  sortedUsernames.splice(creatorIndex, 1)
-  sortedUsernames.unshift(data.group.creator)
-}
-
-const profilesData = []
-for (const username of sortedUsernames) {
-  try {
-    const profileResponse = await fetch(`/api/scrape?username=${username}`)
-    if (profileResponse.ok) {
-      const profileData = await profileResponse.json()
-      profilesData.push(profileData)
-    }
-  } catch (err) {
-    console.error('Erro ao carregar perfil:', username, err)
-  }
-}
-
-setProfiles(profilesData)
-
-          console.log('✅ Grupo carregado com', profilesData.length, 'membros')
-        }
-        
-      } catch (error) {
-        console.error('❌ Erro ao carregar grupo:', error)
-        alert('Erro ao carregar grupo: ' + error)
+// CARREGAR GRUPO AO INICIAR
+useEffect(() => {
+  if (!groupId) return
+  
+  async function loadGroup() {
+    try {
+      console.log('🔍 Buscando grupo:', groupId)
+      
+      const response = await fetch(`/api/grupos/${groupId}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('❌ Erro na resposta:', errorData)
+        throw new Error(errorData.error || 'Grupo não encontrado')
       }
+      
+      const data = await response.json()
+      console.log('📦 Dados recebidos da API:', data)
+      
+      if (data.success && data.group) {
+        console.log('✅ Grupo encontrado:', data.group.name)
+        console.log('👥 Profiles recebidos:', data.group.profiles)
+        
+        // Carregar dados do grupo
+        setGroupData({
+          id: data.group.id,
+          name: data.group.name,
+          icon: data.group.icon,
+          creator: data.group.creator,
+          members: data.group.profiles || [],
+          createdAt: data.group.createdAt
+        })
+        
+        // Garantir que criador vem primeiro
+        const profilesList = data.group.profiles || []
+        const sortedProfiles = [...profilesList]
+        
+        const creatorIndex = sortedProfiles.findIndex(
+          p => p.username.toLowerCase() === data.group.creator.toLowerCase()
+        )
+        
+        if (creatorIndex > 0) {
+          // Mover criador para o início
+          const [creator] = sortedProfiles.splice(creatorIndex, 1)
+          sortedProfiles.unshift(creator)
+          console.log('👑 Criador movido para primeira posição')
+        }
+        
+        // Definir perfis
+        setProfiles(sortedProfiles)
+        
+        console.log('✅ Grupo carregado com', sortedProfiles.length, 'membros')
+        console.log('📋 Membros:', sortedProfiles.map(p => p.username).join(', '))
+      } else {
+        throw new Error('Resposta inválida da API')
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao carregar grupo:', error)
+      alert('Erro ao carregar grupo: ' + error)
     }
-    
-    loadGroup()
-  }, [groupId])
+  }
+  
+  loadGroup()
+}, [groupId])
+
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) {

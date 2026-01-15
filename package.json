@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "setup-db": "node scripts/setup-db.js",
-    "check-grupos": "node scripts/check-grupos.js"
+    "check-grupos": "node scripts/check-grupos.js",
+    "update-db": "node scripts/update-db-schema.js"
   },
   "dependencies": {
     "@vercel/postgres": "^0.10.0",

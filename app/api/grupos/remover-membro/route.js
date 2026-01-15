@@ -4,22 +4,39 @@ export async function POST(request) {
   try {
     const { groupId, username } = await request.json()
 
+    if (!groupId || !username) {
+      return Response.json({ error: 'Dados incompletos' }, { status: 400 })
+    }
+
     // Verificar se não é o criador
     const grupoResult = await sql`
       SELECT creator_username FROM grupos WHERE id = ${groupId}
     `
 
-    if (grupoResult.rows[0]?.creator_username === username) {
+    if (grupoResult.rows.length === 0) {
+      return Response.json({ error: 'Grupo não encontrado' }, { status: 404 })
+    }
+
+    if (grupoResult.rows[0].creator_username === username) {
       return Response.json({ error: 'Não pode remover o criador' }, { status: 400 })
     }
 
     // Remover
-    await sql`
+    const deleteResult = await sql`
       DELETE FROM grupo_membros 
       WHERE grupo_id = ${groupId} AND username = ${username}
     `
 
-    console.log('✅ Membro removido:', username)
+    if (deleteResult.rowCount === 0) {
+      return Response.json({ error: 'Usuário não encontrado no grupo' }, { status: 404 })
+    }
+
+    // Atualizar timestamp
+    await sql`
+      UPDATE grupos SET updated_at = NOW() WHERE id = ${groupId}
+    `
+
+    console.log('✅ Membro removido:', username, 'do grupo', groupId)
 
     return Response.json({ success: true })
 
@@ -28,19 +45,3 @@ export async function POST(request) {
     return Response.json({ error: error.message }, { status: 500 })
   }
 }
-```
-
----
-
-## ✅ **Resumo da Estrutura:**
-```
-BANCO DE DADOS
-├── usuarios (opcional, só registro)
-├── grupos (id, name, icon, creator)
-└── grupo_membros (grupo_id, username)
-
-FLUXO:
-1. Criar grupo → salva em "grupos" + adiciona criador em "grupo_membros"
-2. Buscar grupo → pega lista de usernames
-3. Frontend → chama /api/scrape para cada username (pegar foto, followers)
-4. Mostra na arena
