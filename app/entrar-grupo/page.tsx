@@ -33,7 +33,7 @@ export default function EntrarGrupoPage() {
           
           if (foundGroup) {
             // Redirecionar para a página do grupo
-            router.push('/grupo')
+            router.push(`/grupo/${foundGroup.id}`)
           } else {
             setError('Código de grupo não encontrado')
           }

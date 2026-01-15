@@ -97,23 +97,57 @@ const handleCreateGroup = async () => {
 
   setIsLoading(true)
 
-  setTimeout(() => {
-    const groupData = {
-      id: Date.now().toString(),
-      name: groupName,
-      icon: selectedIcon,
-      creator: userProfile,
-      members: [userProfile],
-      createdAt: new Date().toISOString()
+  try {
+    console.log('🚀 Criando grupo no banco de dados...')
+    
+    // Chamar API para criar grupo no Postgres
+    const response = await fetch('/api/grupos/criar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: groupName,
+        icon: selectedIcon,
+        creatorUsername: userProfile.username
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Erro ao criar grupo')
     }
 
-    const savedGroups = JSON.parse(localStorage.getItem('groups') || '[]')
-    savedGroups.push(groupData)
-    localStorage.setItem('groups', JSON.stringify(savedGroups))
+    const data = await response.json()
+    
+    if (data.success && data.groupId) {
+      console.log('✅ Grupo criado com ID:', data.groupId)
+      
+      // Também salvar no localStorage (para compatibilidade)
+      const groupData = {
+        id: data.groupId,
+        name: groupName,
+        icon: selectedIcon,
+        creator: userProfile,
+        members: [userProfile],
+        createdAt: new Date().toISOString()
+      }
+      
+      const savedGroups = JSON.parse(localStorage.getItem('groups') || '[]')
+      savedGroups.push(groupData)
+      localStorage.setItem('groups', JSON.stringify(savedGroups))
+      
+      alert(`✅ Grupo "${groupName}" criado com sucesso!`)
+      router.push(`/grupo/${data.groupId}`)
+    } else {
+      throw new Error('Resposta inválida da API')
+    }
 
-    alert(`✅ Grupo "${groupName}" criado com sucesso!`)
-    router.push('/grupo')  // ← MUDANÇA AQUI!
-  }, 1500)
+  } catch (error) {
+    console.error('❌ Erro ao criar grupo:', error)
+    alert('Erro ao criar grupo: ' + (error instanceof Error ? error.message : 'Erro desconhecido'))
+    setIsLoading(false)
+  }
 }
 
   const formatNumber = (num: number): string => {

@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import '../globals.css'
+import '../../globals.css'
 
 interface Profile {
   username: string
@@ -31,6 +32,8 @@ interface GroupData {
 
 export default function GrupoPage() {
   const [username, setUsername] = useState('')
+  const params = useParams()
+  const groupId = params.id as string
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -41,45 +44,71 @@ export default function GrupoPage() {
 
   // CARREGAR GRUPO AO INICIAR
   useEffect(() => {
-    const savedGroups = localStorage.getItem('groups')
-    if (savedGroups) {
+    if (!groupId) return
+    
+    async function loadGroup() {
       try {
-        const groups = JSON.parse(savedGroups)
-        if (groups.length > 0) {
-          const lastGroup = groups[groups.length - 1]
-          setGroupData(lastGroup)
-          
-          // Carregar membros do grupo se existirem
-          if (lastGroup.members && lastGroup.members.length > 0) {
-            setProfiles(lastGroup.members)
-          }
+        console.log('🔍 Buscando grupo:', groupId)
+        
+        const response = await fetch(`/api/grupos/${groupId}`)
+        
+        if (!response.ok) {
+          throw new Error('Grupo não encontrado')
         }
-      } catch (error) {
-        console.error('Erro ao carregar grupo:', error)
-      }
-    }
-  }, [])
-
-  // SALVAR MEMBROS NO GRUPO SEMPRE QUE MUDAR
-  useEffect(() => {
-    if (groupData && profiles.length > 0) {
-      const savedGroups = localStorage.getItem('groups')
-      if (savedGroups) {
-        try {
-          const groups = JSON.parse(savedGroups)
-          const updatedGroups = groups.map((group: GroupData) => {
-            if (group.id === groupData.id) {
-              return { ...group, members: profiles }
-            }
-            return group
+        
+        const data = await response.json()
+        
+        if (data.success && data.group) {
+          // Carregar dados básicos do grupo
+          setGroupData({
+            id: data.group.id,
+            name: data.group.name,
+            icon: data.group.icon,
+            creator: data.group.creator,
+            members: [],
+            createdAt: data.group.createdAt
           })
-          localStorage.setItem('groups', JSON.stringify(updatedGroups))
-        } catch (error) {
-          console.error('Erro ao salvar membros:', error)
+          
+          // Buscar perfis completos de cada username
+// Buscar perfis completos de cada username
+const usernames = data.group.usernames || []
+console.log('👥 Carregando perfis:', usernames)
+
+// Garantir que criador vem primeiro
+const sortedUsernames = [...usernames]
+const creatorIndex = sortedUsernames.indexOf(data.group.creator)
+if (creatorIndex > 0) {
+  // Mover criador para o início
+  sortedUsernames.splice(creatorIndex, 1)
+  sortedUsernames.unshift(data.group.creator)
+}
+
+const profilesData = []
+for (const username of sortedUsernames) {
+  try {
+    const profileResponse = await fetch(`/api/scrape?username=${username}`)
+    if (profileResponse.ok) {
+      const profileData = await profileResponse.json()
+      profilesData.push(profileData)
+    }
+  } catch (err) {
+    console.error('Erro ao carregar perfil:', username, err)
+  }
+}
+
+setProfiles(profilesData)
+
+          console.log('✅ Grupo carregado com', profilesData.length, 'membros')
         }
+        
+      } catch (error) {
+        console.error('❌ Erro ao carregar grupo:', error)
+        alert('Erro ao carregar grupo: ' + error)
       }
     }
-  }, [profiles, groupData])
+    
+    loadGroup()
+  }, [groupId])
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) {
@@ -104,6 +133,7 @@ export default function GrupoPage() {
     }
 
     const cleanUsername = username.replace('@', '').trim().toLowerCase()
+    
     if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
       setError('Este perfil já foi adicionado!')
       return
@@ -113,6 +143,7 @@ export default function GrupoPage() {
     setError('')
 
     try {
+      // 1. Buscar dados do perfil
       const response = await fetch(`/api/scrape?username=${cleanUsername}`)
       const data = await response.json()
       
@@ -120,8 +151,26 @@ export default function GrupoPage() {
         throw new Error(data.error || 'Erro ao buscar perfil')
       }
 
+      // 2. Adicionar ao banco de dados
+      const addResponse = await fetch('/api/grupos/adicionar-membro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: groupId,  // ← USAR O ID DA URL
+          username: cleanUsername
+        })
+      })
+
+      if (!addResponse.ok) {
+        const errorData = await addResponse.json()
+        throw new Error(errorData.error || 'Erro ao adicionar membro')
+      }
+
+      // 3. Atualizar interface
       setProfiles([...profiles, data])
       setUsername('')
+      
+      console.log('✅ Membro adicionado:', cleanUsername)
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível carregar o perfil')
@@ -130,8 +179,35 @@ export default function GrupoPage() {
     }
   }
 
-  const handleRemove = (usernameToRemove: string) => {
-    setProfiles(profiles.filter(p => p.username !== usernameToRemove))
+    const handleRemove = async (usernameToRemove: string) => {
+    if (!window.confirm(`Remover @${usernameToRemove} do grupo?`)) {
+      return
+    }
+
+    try {
+      // Remover do banco
+      const response = await fetch('/api/grupos/remover-membro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: groupId,  // ← USAR O ID DA URL
+          username: usernameToRemove
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao remover membro')
+      }
+
+      // Atualizar interface
+      setProfiles(profiles.filter(p => p.username !== usernameToRemove))
+      console.log('✅ Membro removido:', usernameToRemove)
+      
+    } catch (error) {
+      console.error('❌ Erro ao remover membro:', error)
+      alert('Erro ao remover membro: ' + error)
+    }
   }
 
   const handleReset = () => {

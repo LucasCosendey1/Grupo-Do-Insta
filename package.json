@@ -6,11 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup-db": "node scripts/setup-db.js",
+    "check-grupos": "node scripts/check-grupos.js"
   },
   "dependencies": {
-    "@vercel/kv": "^3.0.0",
+    "@vercel/postgres": "^0.10.0",
     "axios": "^1.6.0",
+    "dotenv": "^17.2.3",
     "next": "14.2.0",
     "react": "18.3.0",
     "react-dom": "18.3.0"
