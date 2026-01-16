@@ -43,14 +43,51 @@ export default function Home() {
     }
   }, [])
 
-  const loadUserGroups = async (username: string) => {
-    try {
-      setIsLoading(true)
+const loadUserGroups = async (username: string) => {
+  try {
+    setIsLoading(true)
+    console.log('🔍 Carregando grupos de:', username)
+    
+    // Buscar grupos do banco de dados
+    const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}`)
+    
+    if (response.ok) {
+      const data = await response.json()
       
+      if (data.success && data.groups) {
+        console.log('✅ Grupos encontrados no banco:', data.groups.length)
+        
+        setUserGroups(data.groups)
+        
+        // Também salvar no localStorage como backup
+        const savedGroups = localStorage.getItem('groups') || '[]'
+        const localGroups = JSON.parse(savedGroups)
+        
+        // Mesclar com grupos locais (para manter compatibilidade)
+        const allGroupIds = new Set([
+          ...data.groups.map((g: Group) => g.id),
+          ...localGroups.map((g: any) => g.id)
+        ])
+        
+        const mergedGroups = Array.from(allGroupIds).map(id => {
+          const dbGroup = data.groups.find((g: Group) => g.id === id)
+          const localGroup = localGroups.find((g: any) => g.id === id)
+          return dbGroup || localGroup
+        }).filter(Boolean)
+        
+        setUserGroups(mergedGroups)
+        
+      } else {
+        console.log('⚠️ Nenhum grupo encontrado no banco')
+        setUserGroups([])
+      }
+    } else {
+      console.error('❌ Erro ao buscar grupos:', response.status)
+      
+      // Fallback para localStorage
       const savedGroups = localStorage.getItem('groups')
       if (savedGroups) {
         const groups = JSON.parse(savedGroups)
-        
         const userGroupsList = groups
           .filter((g: any) => 
             g.members?.some((m: any) => 
@@ -66,12 +103,14 @@ export default function Home() {
         
         setUserGroups(userGroupsList)
       }
-    } catch (error) {
-      console.error('Erro ao carregar grupos:', error)
-    } finally {
-      setIsLoading(false)
     }
+  } catch (error) {
+    console.error('❌ Erro ao carregar grupos:', error)
+    setUserGroups([])
+  } finally {
+    setIsLoading(false)
   }
+}
 
 const handleLeaveGroup = async (groupId: string, groupName: string) => {
   if (!userProfile) return

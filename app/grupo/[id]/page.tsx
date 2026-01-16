@@ -123,60 +123,79 @@ useEffect(() => {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    
-    if (!username.trim()) {
-      setError('Digite um username')
-      return
-    }
-
-    const cleanUsername = username.replace('@', '').trim().toLowerCase()
-    
-    if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
-      setError('Este perfil já foi adicionado!')
-      return
-    }
-
-    setIsLoading(true)
-    setError('')
-
-    try {
-      // 1. Buscar dados do perfil
-      const response = await fetch(`/api/scrape?username=${cleanUsername}`)
-      const data = await response.json()
-      
-      if (!response.ok || data.error) {
-        throw new Error(data.error || 'Erro ao buscar perfil')
-      }
-
-      // 2. Adicionar ao banco de dados
-      const addResponse = await fetch('/api/grupos/adicionar-membro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId: groupId,  // ← USAR O ID DA URL
-          username: cleanUsername
-        })
-      })
-
-      if (!addResponse.ok) {
-        const errorData = await addResponse.json()
-        throw new Error(errorData.error || 'Erro ao adicionar membro')
-      }
-
-      // 3. Atualizar interface
-      setProfiles([...profiles, data])
-      setUsername('')
-      
-      console.log('✅ Membro adicionado:', cleanUsername)
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Não foi possível carregar o perfil')
-    } finally {
-      setIsLoading(false)
-    }
+const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault()
+  
+  if (!username.trim()) {
+    setError('Digite um username')
+    return
   }
+
+  const cleanUsername = username.replace('@', '').trim().toLowerCase()
+  
+  if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
+    setError('Este perfil já foi adicionado!')
+    return
+  }
+
+  setIsLoading(true)
+  setError('')
+
+  try {
+    console.log('🔍 Buscando perfil:', cleanUsername)
+    
+    // 1. Buscar dados do perfil
+    const response = await fetch(`/api/scrape?username=${cleanUsername}`)
+    const profileData = await response.json()
+    
+    if (!response.ok || profileData.error) {
+      throw new Error(profileData.error || 'Erro ao buscar perfil')
+    }
+
+    console.log('✅ Perfil encontrado:', profileData.username)
+    console.log('📦 Dados do perfil:', {
+      fullName: profileData.fullName,
+      followers: profileData.followers,
+      posts: profileData.posts,
+      hasProfilePic: !!profileData.profilePic
+    })
+
+    // 2. Adicionar ao banco de dados COM OS DADOS COMPLETOS
+    console.log('💾 Salvando no banco...')
+    
+    const addResponse = await fetch('/api/grupos/adicionar-membro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupId: groupId,
+        username: cleanUsername,
+        profileData: profileData // ← IMPORTANTE: Enviar dados completos
+      })
+    })
+
+    const addResult = await addResponse.json()
+
+    if (!addResponse.ok) {
+      throw new Error(addResult.error || 'Erro ao adicionar membro')
+    }
+
+    console.log('✅ Membro adicionado ao banco com sucesso')
+
+    // 3. Atualizar interface
+    setProfiles([...profiles, profileData])
+    setUsername('')
+    
+    console.log('✅ Interface atualizada')
+    
+  } catch (err) {
+    console.error('❌ Erro:', err)
+    setError(err instanceof Error ? err.message : 'Não foi possível carregar o perfil')
+  } finally {
+    setIsLoading(false)
+  }
+}
+
+
 
     const handleRemove = async (usernameToRemove: string) => {
     if (!window.confirm(`Remover @${usernameToRemove} do grupo?`)) {

@@ -9,6 +9,7 @@ export async function POST(request) {
     }
 
     console.log('➕ Adicionando membro:', username, 'ao grupo', groupId)
+    console.log('📦 Dados recebidos:', profileData ? 'SIM' : 'NÃO')
 
     // Verificar se grupo existe
     const grupoCheck = await sql`
@@ -22,16 +23,36 @@ export async function POST(request) {
     // Buscar dados do perfil se não foram enviados
     let fullProfileData = profileData
     
-    if (!fullProfileData) {
+    if (!fullProfileData || !fullProfileData.profilePic) {
       console.log('🔍 Buscando dados do perfil via API...')
-      const scrapeResponse = await fetch(`${request.headers.get('origin')}/api/scrape?username=${username}`)
+      
+      const origin = request.headers.get('origin') || 'http://localhost:3000'
+      const scrapeResponse = await fetch(`${origin}/api/scrape?username=${username}`)
       
       if (scrapeResponse.ok) {
         fullProfileData = await scrapeResponse.json()
+        console.log('✅ Dados completos obtidos da API')
       } else {
         console.warn('⚠️ Não foi possível buscar dados completos do perfil')
+        fullProfileData = {
+          username: username,
+          fullName: username,
+          profilePic: '',
+          followers: 0,
+          following: 0,
+          posts: 0,
+          biography: '',
+          isPrivate: false,
+          isVerified: false
+        }
       }
     }
+
+    console.log('💾 Salvando no banco...')
+    console.log('   - username:', fullProfileData.username)
+    console.log('   - fullName:', fullProfileData.fullName)
+    console.log('   - profilePic:', fullProfileData.profilePic ? 'SIM' : 'NÃO')
+    console.log('   - followers:', fullProfileData.followers)
 
     // Adicionar membro (UNIQUE constraint evita duplicatas)
     try {
@@ -51,14 +72,14 @@ export async function POST(request) {
         VALUES (
           ${groupId},
           ${username},
-          ${fullProfileData?.fullName || username},
-          ${fullProfileData?.profilePic || ''},
-          ${fullProfileData?.followers || 0},
-          ${fullProfileData?.following || 0},
-          ${fullProfileData?.posts || 0},
-          ${fullProfileData?.biography || ''},
-          ${fullProfileData?.isPrivate || false},
-          ${fullProfileData?.isVerified || false}
+          ${fullProfileData.fullName || username},
+          ${fullProfileData.profilePic || ''},
+          ${fullProfileData.followers || 0},
+          ${fullProfileData.following || 0},
+          ${fullProfileData.posts || 0},
+          ${fullProfileData.biography || ''},
+          ${fullProfileData.isPrivate || false},
+          ${fullProfileData.isVerified || false}
         )
       `
 
@@ -67,7 +88,7 @@ export async function POST(request) {
         UPDATE grupos SET updated_at = NOW() WHERE id = ${groupId}
       `
 
-      console.log('✅ Membro adicionado com dados completos:', username)
+      console.log('✅ Membro adicionado com dados completos')
 
       return Response.json({ 
         success: true,
@@ -75,7 +96,6 @@ export async function POST(request) {
       })
 
     } catch (insertError) {
-      // Erro de constraint = membro já existe
       if (insertError.message.includes('unique') || insertError.message.includes('duplicate')) {
         return Response.json({ error: 'Usuário já está no grupo' }, { status: 400 })
       }

@@ -9,7 +9,10 @@
     "lint": "next lint",
     "setup-db": "node scripts/setup-db.js",
     "check-grupos": "node scripts/check-grupos.js",
-    "update-db": "node scripts/update-db-schema.js"
+    "update-db": "node scripts/update-db-schema.js",
+    "check-table": "node scripts/check-table-structure.js",
+    "fix-members": "node scripts/fix-empty-members.js",
+    "debug-grupo": "node scripts/debug-grupo.js"
   },
   "dependencies": {
     "@vercel/postgres": "^0.10.0",
