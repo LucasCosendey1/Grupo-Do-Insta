@@ -25,7 +25,7 @@ interface GroupData {
     emoji: string
     name: string
   }
-  creator: any
+  creator: string
   members: Profile[]
   createdAt: string
 }
@@ -38,84 +38,71 @@ export default function GrupoPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
-  
-  // DADOS DO GRUPO CARREGADOS DO LOCALSTORAGE
   const [groupData, setGroupData] = useState<GroupData | null>(null)
+  const [isLoadingGroup, setIsLoadingGroup] = useState(true)
 
-// CARREGAR GRUPO AO INICIAR
-useEffect(() => {
-  if (!groupId) return
-  
-  async function loadGroup() {
-    try {
-      console.log('🔍 Buscando grupo:', groupId)
-      
-      const response = await fetch(`/api/grupos/${groupId}`)
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        console.error('❌ Erro na resposta:', errorData)
-        throw new Error(errorData.error || 'Grupo não encontrado')
-      }
-      
-      const data = await response.json()
-      console.log('📦 Dados recebidos da API:', data)
-      
-      if (data.success && data.group) {
-        console.log('✅ Grupo encontrado:', data.group.name)
-        console.log('👥 Profiles recebidos:', data.group.profiles)
+  // ✅ CARREGAR GRUPO - CORRIGIDO PARA USAR APENAS BANCO DE DADOS
+  useEffect(() => {
+    if (!groupId) return
+    
+    async function loadGroup() {
+      try {
+        setIsLoadingGroup(true)
+        console.log('🔍 Buscando grupo:', groupId)
         
-        // Carregar dados do grupo
-        setGroupData({
-          id: data.group.id,
-          name: data.group.name,
-          icon: data.group.icon,
-          creator: data.group.creator,
-          members: data.group.profiles || [],
-          createdAt: data.group.createdAt
-        })
+        const response = await fetch(`/api/grupos/${groupId}`)
         
-        // Garantir que criador vem primeiro
-        const profilesList = data.group.profiles || []
-        const sortedProfiles = [...profilesList]
-        
-        const creatorIndex = sortedProfiles.findIndex(
-          p => p.username.toLowerCase() === data.group.creator.toLowerCase()
-        )
-        
-        if (creatorIndex > 0) {
-          // Mover criador para o início
-          const [creator] = sortedProfiles.splice(creatorIndex, 1)
-          sortedProfiles.unshift(creator)
-          console.log('👑 Criador movido para primeira posição')
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('❌ Erro na resposta:', errorData)
+          throw new Error(errorData.error || 'Grupo não encontrado')
         }
         
-        // Definir perfis
-        setProfiles(sortedProfiles)
+        const data = await response.json()
+        console.log('📦 Dados recebidos da API:', data)
         
-        console.log('✅ Grupo carregado com', sortedProfiles.length, 'membros')
-        console.log('📋 Membros:', sortedProfiles.map(p => p.username).join(', '))
-      } else {
-        throw new Error('Resposta inválida da API')
+        if (data.success && data.group) {
+          console.log('✅ Grupo encontrado:', data.group.name)
+          console.log('👥 Total de perfis recebidos:', data.group.profiles?.length || 0)
+          
+          // ✅ MUDANÇA CRÍTICA: Usar APENAS os dados do banco, sem localStorage
+          const profilesFromDB = data.group.profiles || []
+          
+          console.log('📋 Membros no banco:', profilesFromDB.map((p: Profile) => p.username).join(', '))
+          
+          // Salvar dados do grupo
+          setGroupData({
+            id: data.group.id,
+            name: data.group.name,
+            icon: data.group.icon,
+            creator: data.group.creator,
+            members: profilesFromDB,
+            createdAt: data.group.createdAt
+          })
+          
+          // ✅ DEFINIR PERFIS DIRETAMENTE DO BANCO (sem filtros ou modificações)
+          setProfiles(profilesFromDB)
+          
+          console.log('✅ Estado atualizado com', profilesFromDB.length, 'membros')
+          
+        } else {
+          throw new Error('Resposta inválida da API')
+        }
+        
+      } catch (error) {
+        console.error('❌ Erro ao carregar grupo:', error)
+        alert('Erro ao carregar grupo: ' + error)
+      } finally {
+        setIsLoadingGroup(false)
       }
-      
-    } catch (error) {
-      console.error('❌ Erro ao carregar grupo:', error)
-      alert('Erro ao carregar grupo: ' + error)
     }
-  }
-  
-  loadGroup()
-}, [groupId])
-
+    
+    loadGroup()
+  }, [groupId])
 
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M'
-    }
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K'
-    }
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
@@ -123,92 +110,87 @@ useEffect(() => {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault()
-  
-  if (!username.trim()) {
-    setError('Digite um username')
-    return
-  }
-
-  const cleanUsername = username.replace('@', '').trim().toLowerCase()
-  
-  if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
-    setError('Este perfil já foi adicionado!')
-    return
-  }
-
-  setIsLoading(true)
-  setError('')
-
-  try {
-    console.log('🔍 Buscando perfil:', cleanUsername)
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     
-    // 1. Buscar dados do perfil
-    const response = await fetch(`/api/scrape?username=${cleanUsername}`)
-    const profileData = await response.json()
-    
-    if (!response.ok || profileData.error) {
-      throw new Error(profileData.error || 'Erro ao buscar perfil')
+    if (!username.trim()) {
+      setError('Digite um username')
+      return
     }
 
-    console.log('✅ Perfil encontrado:', profileData.username)
-    console.log('📦 Dados do perfil:', {
-      fullName: profileData.fullName,
-      followers: profileData.followers,
-      posts: profileData.posts,
-      hasProfilePic: !!profileData.profilePic
-    })
-
-    // 2. Adicionar ao banco de dados COM OS DADOS COMPLETOS
-    console.log('💾 Salvando no banco...')
+    const cleanUsername = username.replace('@', '').trim().toLowerCase()
     
-    const addResponse = await fetch('/api/grupos/adicionar-membro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        groupId: groupId,
-        username: cleanUsername,
-        profileData: profileData // ← IMPORTANTE: Enviar dados completos
+    // Verificar se já existe (case-insensitive)
+    if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
+      setError('Este perfil já foi adicionado!')
+      return
+    }
+
+    setIsLoading(true)
+    setError('')
+
+    try {
+      console.log('🔍 Buscando perfil:', cleanUsername)
+      
+      // 1. Buscar dados do perfil
+      const response = await fetch(`/api/scrape?username=${cleanUsername}`)
+      const profileData = await response.json()
+      
+      if (!response.ok || profileData.error) {
+        throw new Error(profileData.error || 'Erro ao buscar perfil')
+      }
+
+      console.log('✅ Perfil encontrado:', profileData.username)
+
+      // 2. Adicionar ao banco de dados
+      console.log('💾 Adicionando ao banco...')
+      
+      const addResponse = await fetch('/api/grupos/adicionar-membro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: groupId,
+          username: cleanUsername,
+          profileData: profileData
+        })
       })
-    })
 
-    const addResult = await addResponse.json()
+      const addResult = await addResponse.json()
 
-    if (!addResponse.ok) {
-      throw new Error(addResult.error || 'Erro ao adicionar membro')
+      if (!addResponse.ok) {
+        throw new Error(addResult.error || 'Erro ao adicionar membro')
+      }
+
+      console.log('✅ Membro adicionado ao banco com sucesso')
+
+      // 3. Atualizar interface - adicionar ao array existente
+      setProfiles(prevProfiles => [...prevProfiles, profileData])
+      setUsername('')
+      
+      console.log('✅ Interface atualizada. Total de membros:', profiles.length + 1)
+      
+    } catch (err) {
+      console.error('❌ Erro:', err)
+      setError(err instanceof Error ? err.message : 'Erro ao adicionar membro')
+    } finally {
+      setIsLoading(false)
     }
-
-    console.log('✅ Membro adicionado ao banco com sucesso')
-
-    // 3. Atualizar interface
-    setProfiles([...profiles, profileData])
-    setUsername('')
-    
-    console.log('✅ Interface atualizada')
-    
-  } catch (err) {
-    console.error('❌ Erro:', err)
-    setError(err instanceof Error ? err.message : 'Não foi possível carregar o perfil')
-  } finally {
-    setIsLoading(false)
   }
-}
 
-
-
-    const handleRemove = async (usernameToRemove: string) => {
+  const handleRemove = async (usernameToRemove: string) => {
     if (!window.confirm(`Remover @${usernameToRemove} do grupo?`)) {
       return
     }
 
     try {
+      console.log('🗑️ Removendo:', usernameToRemove)
+      
       // Remover do banco
       const response = await fetch('/api/grupos/remover-membro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          groupId: groupId,  // ← USAR O ID DA URL
+          groupId: groupId,
           username: usernameToRemove
         })
       })
@@ -230,9 +212,8 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 
   const handleReset = () => {
     if (window.confirm('Deseja remover todos os perfis do grupo?')) {
-      setProfiles([])
-      setUsername('')
-      setError('')
+      // Implementar lógica de reset se necessário
+      alert('Função de reset não implementada. Use o botão de remover individual.')
     }
   }
 
@@ -241,21 +222,33 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
   }
 
+  // Loading state
+  if (isLoadingGroup) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Carregando grupo...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container">
       <div className="card">
-        {/* BOTÃO VOLTAR */}
         <Link href="/" className="btn-back">
           <span className="back-arrow">←</span>
           <span>Voltar</span>
         </Link>
 
-        {/* HEADER COM DADOS DO GRUPO */}
         <div className="header">
           <div className="logo">
             {groupData?.icon?.emoji || '⚡'}
           </div>
-          <h1>{groupData?.name || 'Insta do Grupo'}</h1>
+          <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
           <p className="subtitle">Descubra o alcance total do seu grupo</p>
         </div>
 
@@ -286,7 +279,7 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 
           {profiles.length === 0 && (
             <div className="info-box">
-              <strong>✨ Como funciona:</strong>
+              <strong>✨ Como funciona:</strong><br/>
               1. Adicione os @usernames dos membros do grupo<br/>
               2. Veja o alcance total somado em tempo real<br/>
               3. Compartilhe o poder do seu grupo!
@@ -305,9 +298,29 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
                   <span className="followers-text">seguidores</span>
                 </div>
                 <div className="total-members">
-                  <span className="member-count">{profiles.length}</span> {profiles.length === 1 ? 'membro ativo' : 'membros ativos'}
+                  <span className="member-count">{profiles.length}</span>{' '}
+                  {profiles.length === 1 ? 'membro ativo' : 'membros ativos'}
                 </div>
               </div>
+            </div>
+
+            {/* ✅ DEBUG: Mostrar lista de membros */}
+            <div style={{ 
+              background: 'rgba(0,191,255,0.1)', 
+              padding: '12px', 
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '12px',
+              fontFamily: 'monospace'
+            }}>
+              <strong>🐛 DEBUG - Membros carregados ({profiles.length}):</strong>
+              <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
+                {profiles.map((p, i) => (
+                  <li key={p.username}>
+                    {i === 0 ? '👑' : '👤'} @{p.username} - {formatNumber(p.followers)} seguidores
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <ProfilesArena 
@@ -315,10 +328,11 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
               onRemove={handleRemove}
               onImageError={handleImageError}
               onProfileClick={setSelectedProfile}
+              creatorUsername={groupData?.creator || ''}
             />
 
             <button className="btn btn-secondary" onClick={handleReset}>
-              🔄 Resetar Grupo
+              🔄 Gerenciar Membros
             </button>
           </div>
         )}
@@ -335,14 +349,22 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
   )
 }
 
+// ✅ COMPONENTE ProfilesArena - Adicionado creatorUsername prop
 interface ProfilesArenaProps {
   profiles: Profile[]
   onRemove: (username: string) => void
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
+  creatorUsername: string
 }
 
-function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }: ProfilesArenaProps) {
+function ProfilesArena({ 
+  profiles, 
+  onRemove, 
+  onImageError, 
+  onProfileClick,
+  creatorUsername 
+}: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
 
   const updatePosition = (username: string, position: { x: number; y: number }) => {
@@ -352,20 +374,26 @@ function ProfilesArena({ profiles, onRemove, onImageError, onProfileClick }: Pro
     }))
   }
 
+  console.log('🎨 ProfilesArena renderizando com', profiles.length, 'perfis')
+
   return (
     <div className="profiles-arena">
-      {profiles.map((profile, index) => (
-        <MovingProfile 
-          key={profile.username}
-          profile={profile}
-          onRemove={onRemove}
-          onImageError={onImageError}
-          onProfileClick={onProfileClick}
-          allPositions={positions}
-          updatePosition={updatePosition}
-          isAdmin={index === 0}
-        />
-      ))}
+      {profiles.map((profile) => {
+        const isAdmin = profile.username.toLowerCase() === creatorUsername.toLowerCase()
+        
+        return (
+          <MovingProfile 
+            key={profile.username}
+            profile={profile}
+            onRemove={onRemove}
+            onImageError={onImageError}
+            onProfileClick={onProfileClick}
+            allPositions={positions}
+            updatePosition={updatePosition}
+            isAdmin={isAdmin}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -380,7 +408,15 @@ interface MovingProfileProps {
   isAdmin: boolean
 }
 
-function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
+function MovingProfile({ 
+  profile, 
+  onRemove, 
+  onImageError, 
+  onProfileClick, 
+  allPositions, 
+  updatePosition, 
+  isAdmin 
+}: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -393,23 +429,25 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
     const MIN_SIZE = 50
     const MAX_SIZE = 120
     
-    if (followers <= 1000) {
-      return MIN_SIZE
-    } else if (followers >= 1000000) {
-      return MAX_SIZE
-    } else {
-      const logMin = Math.log10(1000)
-      const logMax = Math.log10(1000000)
-      const logCurrent = Math.log10(followers)
-      
-      const percentage = (logCurrent - logMin) / (logMax - logMin)
-      return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * percentage
-    }
+    if (followers <= 1000) return MIN_SIZE
+    if (followers >= 1000000) return MAX_SIZE
+    
+    const logMin = Math.log10(1000)
+    const logMax = Math.log10(1000000)
+    const logCurrent = Math.log10(followers)
+    
+    const percentage = (logCurrent - logMin) / (logMax - logMin)
+    return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * percentage
   }
 
   const imageSize = calculateImageSize(profile.followers)
 
-  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
+  const checkCollision = (
+    pos1: { x: number; y: number }, 
+    pos2: { x: number; y: number }, 
+    size1: number, 
+    size2: number
+  ): boolean => {
     const dx = pos1.x - pos2.x
     const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
@@ -417,7 +455,11 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
     return distance < minDistance
   }
 
-  const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
+  const resolveCollision = (
+    myPos: { x: number; y: number }, 
+    otherPos: { x: number; y: number }, 
+    myVel: { x: number; y: number }
+  ): { x: number; y: number } => {
     const dx = myPos.x - otherPos.x
     const dy = myPos.y - otherPos.y
     const distance = Math.sqrt(dx * dx + dy * dy)
@@ -542,25 +584,16 @@ function MovingProfile({ profile, onRemove, onImageError, onProfileClick, allPos
   }, [isHovered, position, imageSize])
 
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M'
-    }
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K'
-    }
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
   const getTooltipClass = (): string => {
     const classes = ['profile-info']
-    if (tooltipPosition.vertical === 'bottom') {
-      classes.push('profile-info-bottom')
-    }
-    if (tooltipPosition.horizontal === 'left') {
-      classes.push('profile-info-left')
-    } else if (tooltipPosition.horizontal === 'right') {
-      classes.push('profile-info-right')
-    }
+    if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
+    if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
+    else if (tooltipPosition.horizontal === 'right') classes.push('profile-info-right')
     return classes.join(' ')
   }
 
@@ -627,12 +660,8 @@ interface ProfileModalProps {
 
 function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   const formatNumber = (num: number): string => {
-    if (num >= 1000000) {
-      return (num / 1000000).toFixed(1) + 'M'
-    }
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K'
-    }
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
@@ -644,9 +673,7 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose()
-      }
+      if (e.key === 'Escape') onClose()
     }
     
     document.addEventListener('keydown', handleEscape)
@@ -656,9 +683,7 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   return (
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-content">
-        <button className="modal-close" onClick={onClose}>
-          ×
-        </button>
+        <button className="modal-close" onClick={onClose}>×</button>
 
         <div className="modal-header-compact">
           <img 

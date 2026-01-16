@@ -5,7 +5,7 @@ console.log('🔌 [API] POSTGRES_URL:', process.env.POSTGRES_URL?.substring(0, 5
 export async function GET(request, { params }) {
   try {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🔍 [API] Buscando grupo...')
+    console.log('🧪 [API-TESTE] Buscando grupo SEM o criador...')
     const { id } = params
 
     if (!id) {
@@ -29,10 +29,10 @@ export async function GET(request, { params }) {
     console.log('✅ [API] Grupo encontrado:', grupo.name)
     console.log('👑 [API] Criador:', grupo.creator_username)
 
-    // Buscar membros com TODOS os dados
-    console.log('📋 [API] Executando query de membros...')
+    // ✅ MUDANÇA: Buscar APENAS membros que NÃO são o criador
+    console.log('📋 [API] Buscando APENAS membros (SEM criador)...')
     
-    const membrosResult = await query`SELECT 
+    const membrosResult = await sql`SELECT 
       username,
       full_name,
       profile_pic,
@@ -45,44 +45,43 @@ export async function GET(request, { params }) {
       added_at
     FROM grupo_membros 
     WHERE grupo_id = ${id}
+      AND LOWER(username) != LOWER(${grupo.creator_username})
     ORDER BY added_at ASC
     `
 
-    console.log('📊 [API] Rows retornadas do banco:', membrosResult.rows.length)
-    console.log('👥 [API] Usernames no banco:', membrosResult.rows.map(m => m.username).join(', '))
+    console.log('📊 [API-TESTE] Membros SEM criador:', membrosResult.rows.length)
+    console.log('👥 [API-TESTE] Usernames:', membrosResult.rows.map(m => m.username).join(', '))
 
-    // Debug: mostrar CADA membro
-    membrosResult.rows.forEach((m, index) => {
-      console.log(`   ${index + 1}. @${m.username}:`)
-      console.log(`      - full_name: ${m.full_name || 'NULL'}`)
-      console.log(`      - profile_pic: ${m.profile_pic ? 'HAS DATA' : 'NULL'}`)
-      console.log(`      - followers: ${m.followers}`)
-    })
-
-    // Montar array de perfis completos
-    console.log('🔨 [API] Montando array de perfis...')
-    
-    const profiles = membrosResult.rows.map((m, index) => {
-      console.log(`   Processando membro ${index + 1}/@${m.username}...`)
+    // Se não encontrou ninguém, tentar buscar TODOS
+    if (membrosResult.rows.length === 0) {
+      console.log('⚠️  Nenhum membro além do criador!')
+      console.log('🔍 Buscando TODOS os membros (incluindo criador)...')
       
-      const profile = {
-        username: m.username,
-        fullName: m.full_name || m.username,
-        profilePic: m.profile_pic || `https://ui-avatars.com/api/?name=${m.username}&size=200&background=00bfff&color=fff`,
-        followers: m.followers || 0,
-        following: m.following || 0,
-        posts: m.posts || 0,
-        biography: m.biography || '',
-        isPrivate: m.is_private || false,
-        isVerified: m.is_verified || false
-      }
+      const todosResult = await sql`
+        SELECT username FROM grupo_membros WHERE grupo_id = ${id}
+      `
       
-      console.log(`   ✅ Profile criado para @${profile.username}`)
-      return profile
-    })
+      console.log('📊 Total no banco:', todosResult.rows.length)
+      todosResult.rows.forEach(m => {
+        console.log(`   - @${m.username}`)
+      })
+    }
 
-    console.log('📦 [API] Array de profiles montado. Total:', profiles.length)
-    console.log('📋 [API] Usernames no array:', profiles.map(p => p.username).join(', '))
+    // Montar array de perfis
+    const profiles = membrosResult.rows.map((m) => ({
+      username: m.username,
+      fullName: m.full_name || m.username,
+      profilePic: m.profile_pic || `https://ui-avatars.com/api/?name=${m.username}&size=200&background=00bfff&color=fff`,
+      followers: m.followers || 0,
+      following: m.following || 0,
+      posts: m.posts || 0,
+      biography: m.biography || '',
+      isPrivate: m.is_private || false,
+      isVerified: m.is_verified || false
+    }))
+
+    console.log('📤 [API] Retornando', profiles.length, 'perfis (SEM criador)')
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
     const response = {
       success: true,
@@ -98,9 +97,6 @@ export async function GET(request, { params }) {
         createdAt: grupo.created_at
       }
     }
-
-    console.log('📤 [API] Retornando response com', response.group.profiles.length, 'perfis')
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
     return Response.json(response)
 
