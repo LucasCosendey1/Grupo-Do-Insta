@@ -1,19 +1,21 @@
 import { sql } from '@vercel/postgres'
 
+// 🚨 COMANDOS ANTI-CACHE DO NEXT.JS (SERVER-SIDE)
+// Isso obriga a rota a ser recriada a cada requisição, ignorando o cache estático do servidor.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 console.log('🔌 [API] POSTGRES_URL:', process.env.POSTGRES_URL?.substring(0, 50) + '...')
 
 export async function GET(request, { params }) {
   try {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🔍 [API] Nova requisição:', new Date().toISOString())
+    console.log('🔍 [API] Nova requisição (SEM CACHE):', new Date().toISOString())
     const { id } = params
 
     if (!id) {
-      console.log('❌ [API] ID não fornecido')
       return Response.json({ error: 'ID não fornecido' }, { status: 400 })
     }
-
-    console.log('🔎 [API] ID do grupo:', id)
 
     // Buscar dados do grupo
     const grupoResult = await sql`
@@ -21,16 +23,16 @@ export async function GET(request, { params }) {
     `
 
     if (grupoResult.rows.length === 0) {
-      console.log('❌ [API] Grupo não encontrado no banco')
       return Response.json({ error: 'Grupo não encontrado' }, { status: 404 })
     }
 
     const grupo = grupoResult.rows[0]
-    console.log('✅ [API] Grupo encontrado:', grupo.name)
-    console.log('👑 [API] Criador:', grupo.creator_username)
+    console.log('✅ [API] Grupo:', grupo.name)
 
-    // Buscar APENAS membros que NÃO são o criador
-    console.log('📋 [API] Buscando membros (SEM criador)...')
+    // Buscar TODOS os membros
+    // Dica: Adicionei um timestamp inútil no final da query para garantir que o banco não cacheie a query exata
+    const timestamp = Date.now() 
+    console.log('📋 [API] Buscando todos os membros...')
     
     const membrosResult = await sql`SELECT 
       username,
@@ -45,26 +47,12 @@ export async function GET(request, { params }) {
       added_at
     FROM grupo_membros 
     WHERE grupo_id = ${id}
-      AND LOWER(username) != LOWER(${grupo.creator_username})
+    -- O filtro abaixo não altera o resultado, mas força o Postgres a reavaliar a query
+    AND ${timestamp} = ${timestamp} 
     ORDER BY added_at ASC
     `
 
     console.log('📊 [API] Membros encontrados:', membrosResult.rows.length)
-    console.log('👥 [API] Usernames:', membrosResult.rows.map(m => m.username).join(', '))
-
-    // Se não encontrou ninguém, buscar TODOS para debug
-    if (membrosResult.rows.length === 0) {
-      console.log('⚠️  Nenhum membro além do criador!')
-      
-      const todosResult = await sql`
-        SELECT username FROM grupo_membros WHERE grupo_id = ${id}
-      `
-      
-      console.log('📊 Total no banco:', todosResult.rows.length)
-      todosResult.rows.forEach(m => {
-        console.log(`   - @${m.username}`)
-      })
-    }
 
     // Montar array de perfis
     const profiles = membrosResult.rows.map((m) => ({
@@ -79,9 +67,6 @@ export async function GET(request, { params }) {
       isVerified: m.is_verified || false
     }))
 
-    console.log('📤 [API] Retornando', profiles.length, 'perfis')
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-
     const responseData = {
       success: true,
       group: {
@@ -91,14 +76,14 @@ export async function GET(request, { params }) {
           emoji: grupo.icon_emoji,
           name: grupo.icon_name
         },
-        creator: grupo.creator_username,
         profiles: profiles,
         createdAt: grupo.created_at
       }
     }
 
-    // ✅ CRIAR Response com headers anti-cache FORTES
-    const response = new Response(JSON.stringify(responseData), {
+    // ✅ HEADERS ANTI-CACHE (CLIENT-SIDE / BROWSER)
+    // Isso avisa o navegador e a CDN da Vercel para não guardarem nada
+    return new Response(JSON.stringify(responseData), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
@@ -106,16 +91,11 @@ export async function GET(request, { params }) {
         'Pragma': 'no-cache',
         'Expires': '0',
         'Surrogate-Control': 'no-store',
-        'CDN-Cache-Control': 'no-store',
-        'Vercel-CDN-Cache-Control': 'no-store'
       }
     })
 
-    return response
-
   } catch (error) {
     console.error('❌ [API] ERRO:', error)
-    console.error('Stack:', error.stack)
     return Response.json({ error: error.message }, { status: 500 })
   }
 }
