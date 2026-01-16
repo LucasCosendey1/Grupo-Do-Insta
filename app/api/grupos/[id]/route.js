@@ -5,7 +5,7 @@ console.log('🔌 [API] POSTGRES_URL:', process.env.POSTGRES_URL?.substring(0, 5
 export async function GET(request, { params }) {
   try {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🧪 [API-TESTE] Buscando grupo SEM o criador...')
+    console.log('🔍 [API] Nova requisição:', new Date().toISOString())
     const { id } = params
 
     if (!id) {
@@ -29,8 +29,8 @@ export async function GET(request, { params }) {
     console.log('✅ [API] Grupo encontrado:', grupo.name)
     console.log('👑 [API] Criador:', grupo.creator_username)
 
-    // ✅ MUDANÇA: Buscar APENAS membros que NÃO são o criador
-    console.log('📋 [API] Buscando APENAS membros (SEM criador)...')
+    // Buscar APENAS membros que NÃO são o criador
+    console.log('📋 [API] Buscando membros (SEM criador)...')
     
     const membrosResult = await sql`SELECT 
       username,
@@ -49,13 +49,12 @@ export async function GET(request, { params }) {
     ORDER BY added_at ASC
     `
 
-    console.log('📊 [API-TESTE] Membros SEM criador:', membrosResult.rows.length)
-    console.log('👥 [API-TESTE] Usernames:', membrosResult.rows.map(m => m.username).join(', '))
+    console.log('📊 [API] Membros encontrados:', membrosResult.rows.length)
+    console.log('👥 [API] Usernames:', membrosResult.rows.map(m => m.username).join(', '))
 
-    // Se não encontrou ninguém, tentar buscar TODOS
+    // Se não encontrou ninguém, buscar TODOS para debug
     if (membrosResult.rows.length === 0) {
       console.log('⚠️  Nenhum membro além do criador!')
-      console.log('🔍 Buscando TODOS os membros (incluindo criador)...')
       
       const todosResult = await sql`
         SELECT username FROM grupo_membros WHERE grupo_id = ${id}
@@ -80,10 +79,10 @@ export async function GET(request, { params }) {
       isVerified: m.is_verified || false
     }))
 
-    console.log('📤 [API] Retornando', profiles.length, 'perfis (SEM criador)')
+    console.log('📤 [API] Retornando', profiles.length, 'perfis')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
-    const response = {
+    const responseData = {
       success: true,
       group: {
         id: grupo.id,
@@ -98,7 +97,21 @@ export async function GET(request, { params }) {
       }
     }
 
-    return Response.json(response)
+    // ✅ CRIAR Response com headers anti-cache FORTES
+    const response = new Response(JSON.stringify(responseData), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store',
+        'CDN-Cache-Control': 'no-store',
+        'Vercel-CDN-Cache-Control': 'no-store'
+      }
+    })
+
+    return response
 
   } catch (error) {
     console.error('❌ [API] ERRO:', error)
