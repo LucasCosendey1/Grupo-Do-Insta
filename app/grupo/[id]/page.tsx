@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import '../../globals.css'
 
@@ -15,6 +15,7 @@ interface Profile {
   biography: string
   isPrivate: boolean
   isVerified: boolean
+  isCreator?: boolean
 }
 
 interface GroupData {
@@ -30,18 +31,41 @@ interface GroupData {
   createdAt: string
 }
 
+interface UserProfile {
+  username: string
+  fullName: string
+  profilePic: string
+  followers: number
+  isVerified: boolean
+}
+
 export default function GrupoPage() {
-  const [username, setUsername] = useState('')
+  const router = useRouter()
   const params = useParams()
   const groupId = params.id as string
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [groupData, setGroupData] = useState<GroupData | null>(null)
   const [isLoadingGroup, setIsLoadingGroup] = useState(true)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [isUserMember, setIsUserMember] = useState(false)
+  const [isJoining, setIsJoining] = useState(false)
+  const [showCopiedMessage, setShowCopiedMessage] = useState(false)
 
-  // ✅ CARREGAR GRUPO - CORRIGIDO PARA USAR APENAS BANCO DE DADOS
+  // ✅ VERIFICAR SE USUÁRIO ESTÁ LOGADO
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('userProfile')
+    if (savedProfile) {
+      try {
+        const profile = JSON.parse(savedProfile)
+        setUserProfile(profile)
+      } catch (error) {
+        console.error('Erro ao carregar perfil:', error)
+      }
+    }
+  }, [])
+
+  // ✅ CARREGAR GRUPO
   useEffect(() => {
     if (!groupId) return
     
@@ -50,7 +74,7 @@ export default function GrupoPage() {
         setIsLoadingGroup(true)
         console.log('🔍 Buscando grupo:', groupId)
         
-        const response = await fetch(`/api/grupos/${groupId}`)
+        const response = await fetch(`/api/grupos/${groupId}`, { cache: 'no-store' })
         
         if (!response.ok) {
           const errorData = await response.json()
@@ -63,14 +87,9 @@ export default function GrupoPage() {
         
         if (data.success && data.group) {
           console.log('✅ Grupo encontrado:', data.group.name)
-          console.log('👥 Total de perfis recebidos:', data.group.profiles?.length || 0)
           
-          // ✅ MUDANÇA CRÍTICA: Usar APENAS os dados do banco, sem localStorage
           const profilesFromDB = data.group.profiles || []
           
-          console.log('📋 Membros no banco:', profilesFromDB.map((p: Profile) => p.username).join(', '))
-          
-          // Salvar dados do grupo
           setGroupData({
             id: data.group.id,
             name: data.group.name,
@@ -80,10 +99,7 @@ export default function GrupoPage() {
             createdAt: data.group.createdAt
           })
           
-          // ✅ DEFINIR PERFIS DIRETAMENTE DO BANCO (sem filtros ou modificações)
           setProfiles(profilesFromDB)
-          
-          console.log('✅ Estado atualizado com', profilesFromDB.length, 'membros')
           
         } else {
           throw new Error('Resposta inválida da API')
@@ -100,6 +116,16 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
+  // ✅ VERIFICAR SE USUÁRIO É MEMBRO DO GRUPO
+  useEffect(() => {
+    if (userProfile && profiles.length > 0) {
+      const isMember = profiles.some(
+        p => p.username.toLowerCase() === userProfile.username.toLowerCase()
+      )
+      setIsUserMember(isMember)
+    }
+  }, [userProfile, profiles])
+
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -110,47 +136,40 @@ export default function GrupoPage() {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    
-    if (!username.trim()) {
-      setError('Digite um username')
+  // ✅ COPIAR LINK DE CONVITE
+  const handleCopyInviteLink = () => {
+    const inviteLink = window.location.href
+    navigator.clipboard.writeText(inviteLink)
+    setShowCopiedMessage(true)
+    setTimeout(() => setShowCopiedMessage(false), 3000)
+  }
+
+  // ✅ PARTICIPAR DO GRUPO
+  const handleJoinGroup = async () => {
+    if (!userProfile) {
+      localStorage.setItem('redirectAfterLogin', window.location.pathname)
+      router.push('/login')
       return
     }
 
-    const cleanUsername = username.replace('@', '').trim().toLowerCase()
-    
-    // Verificar se já existe (case-insensitive)
-    if (profiles.some(p => p.username.toLowerCase() === cleanUsername)) {
-      setError('Este perfil já foi adicionado!')
-      return
-    }
-
-    setIsLoading(true)
-    setError('')
+    setIsJoining(true)
 
     try {
-      console.log('🔍 Buscando perfil:', cleanUsername)
+      console.log('🚀 Participando do grupo:', groupId)
       
-      // 1. Buscar dados do perfil
-      const response = await fetch(`/api/scrape?username=${cleanUsername}`)
+      const response = await fetch(`/api/scrape?username=${userProfile.username}`)
       const profileData = await response.json()
       
       if (!response.ok || profileData.error) {
         throw new Error(profileData.error || 'Erro ao buscar perfil')
       }
 
-      console.log('✅ Perfil encontrado:', profileData.username)
-
-      // 2. Adicionar ao banco de dados
-      console.log('💾 Adicionando ao banco...')
-      
       const addResponse = await fetch('/api/grupos/adicionar-membro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           groupId: groupId,
-          username: cleanUsername,
+          username: userProfile.username,
           profileData: profileData
         })
       })
@@ -158,34 +177,49 @@ export default function GrupoPage() {
       const addResult = await addResponse.json()
 
       if (!addResponse.ok) {
-        throw new Error(addResult.error || 'Erro ao adicionar membro')
+        if (addResult.error?.includes('já está no grupo')) {
+          alert('Você já é membro deste grupo!')
+          setIsUserMember(true)
+          return
+        }
+        throw new Error(addResult.error || 'Erro ao participar do grupo')
       }
 
-      console.log('✅ Membro adicionado ao banco com sucesso')
+      console.log('✅ Participou do grupo com sucesso')
 
-      // 3. Atualizar interface - adicionar ao array existente
-      setProfiles(prevProfiles => [...prevProfiles, profileData])
-      setUsername('')
+      // Evita duplicação ao entrar
+      setProfiles(prevProfiles => {
+        const filtered = prevProfiles.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase())
+        return [...filtered, { ...profileData, isCreator: false }]
+      })
       
-      console.log('✅ Interface atualizada. Total de membros:', profiles.length + 1)
+      setIsUserMember(true)
+      alert('🎉 Bem-vindo ao grupo!')
       
     } catch (err) {
       console.error('❌ Erro:', err)
-      setError(err instanceof Error ? err.message : 'Erro ao adicionar membro')
+      alert('Erro ao participar do grupo: ' + (err instanceof Error ? err.message : 'Erro desconhecido'))
     } finally {
-      setIsLoading(false)
+      setIsJoining(false)
     }
   }
 
+  // ✅ REMOVER MEMBRO (só admin pode)
   const handleRemove = async (usernameToRemove: string) => {
+    if (!userProfile) return
+    
+    const isCreator = groupData?.creator.toLowerCase() === userProfile.username.toLowerCase()
+    
+    if (!isCreator) {
+      alert('Apenas o criador do grupo pode remover membros!')
+      return
+    }
+
     if (!window.confirm(`Remover @${usernameToRemove} do grupo?`)) {
       return
     }
 
     try {
-      console.log('🗑️ Removendo:', usernameToRemove)
-      
-      // Remover do banco
       const response = await fetch('/api/grupos/remover-membro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,29 +234,99 @@ export default function GrupoPage() {
         throw new Error(errorData.error || 'Erro ao remover membro')
       }
 
-      // Atualizar interface
-      setProfiles(profiles.filter(p => p.username !== usernameToRemove))
-      console.log('✅ Membro removido:', usernameToRemove)
+      // Remove da lista visualmente
+      setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== usernameToRemove.toLowerCase()))
+      alert('✅ Membro removido com sucesso!')
       
     } catch (error) {
-      console.error('❌ Erro ao remover membro:', error)
       alert('Erro ao remover membro: ' + error)
     }
   }
 
-  const handleReset = () => {
-    if (window.confirm('Deseja remover todos os perfis do grupo?')) {
-      // Implementar lógica de reset se necessário
-      alert('Função de reset não implementada. Use o botão de remover individual.')
+  // ✅ SAIR DO GRUPO (CORRIGIDO)
+  const handleLeaveGroup = async () => {
+    if (!userProfile) return
+
+    if (!window.confirm('Tem certeza que deseja sair do grupo?')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/grupos/sair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: groupId,
+          username: userProfile.username
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) throw new Error(data.error || 'Erro ao sair')
+
+      if (data.groupDeleted) {
+        alert('🗑️ Você era o último membro. O grupo foi deletado.')
+        router.push('/')
+      } else {
+        alert('✅ Você saiu do grupo!')
+        setIsUserMember(false)
+        
+        // 🚨 CORREÇÃO CRÍTICA AQUI 🚨
+        // Removemos o usuário da lista 'profiles' imediatamente.
+        // Isso remove a bola da tela e corrige o total de seguidores.
+        setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase()))
+      }
+
+    } catch (error) {
+      alert('Erro ao sair do grupo.')
     }
   }
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    console.error('Erro ao carregar imagem para:', username)
     e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
   }
 
-  // Loading state
+  if (!isLoadingGroup && !userProfile) {
+    return (
+      <div className="container">
+        <div className="card">
+          <div className="header">
+            <div className="logo">
+              {groupData?.icon?.emoji || '⚡'}
+            </div>
+            <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
+            <p className="subtitle">Você precisa fazer login para acessar este grupo</p>
+          </div>
+
+          <div className="login-prompt-section">
+            <div className="prompt-icon">🔐</div>
+            <div className="prompt-text">Faça login para ver os membros e participar</div>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                localStorage.setItem('redirectAfterLogin', window.location.pathname)
+                router.push('/login')
+              }}
+            >
+              <span className="btn-icon">🚀</span>
+              <span>Fazer Login</span>
+            </button>
+          </div>
+
+          <div className="info-box">
+            <strong>💡 Como funciona:</strong>
+            <p>
+              1. Faça login com seu @username do Instagram<br/>
+              2. Você será redirecionado de volta para este grupo<br/>
+              3. Poderá ver os membros e decidir se quer participar
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (isLoadingGroup) {
     return (
       <div className="container">
@@ -249,45 +353,84 @@ export default function GrupoPage() {
             {groupData?.icon?.emoji || '⚡'}
           </div>
           <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
-          <p className="subtitle">Descubra o alcance total do seu grupo</p>
+          <p className="subtitle">
+            {isUserMember 
+              ? 'Você faz parte deste grupo' 
+              : 'Compartilhe o link para convidar pessoas'}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="input-group">
-            <label htmlFor="username">Adicionar membro (@username)</label>
-            <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Digite o @username do Instagram"
-              className="input"
-              autoComplete="off"
-              disabled={isLoading}
-            />
-          </div>
+        <div className="group-actions">
+          {isUserMember ? (
+            <>
+              <button 
+                className="btn btn-secondary"
+                onClick={handleCopyInviteLink}
+              >
+                <span className="btn-icon">🔗</span>
+                <span>{showCopiedMessage ? 'Link Copiado!' : 'Copiar Link de Convite'}</span>
+              </button>
 
-          <button type="submit" className="btn" disabled={isLoading}>
-            {isLoading ? '⏳ Buscando...' : '+ Adicionar ao Grupo'}
-          </button>
+              <button 
+                className="btn btn-danger"
+                onClick={handleLeaveGroup}
+              >
+                <span className="btn-icon">🚪</span>
+                <span>Sair do Grupo</span>
+              </button>
+            </>
+          ) : userProfile && profiles.length > 0 ? (
+            <>
+              <button 
+                className="btn btn-primary"
+                onClick={handleJoinGroup}
+                disabled={isJoining}
+              >
+                {isJoining ? (
+                  <>
+                    <span className="btn-icon">⏳</span>
+                    <span>Participando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="btn-icon">✨</span>
+                    <span>Participar do Grupo</span>
+                  </>
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <button 
+                className="btn btn-primary"
+                onClick={handleJoinGroup}
+                disabled={isJoining}
+              >
+                {isJoining ? (
+                  <>
+                    <span className="btn-icon">⏳</span>
+                    <span>Participando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="btn-icon">✨</span>
+                    <span>Participar do Grupo</span>
+                  </>
+                )}
+              </button>
 
-          {error && (
-            <div className="error">
-              ❌ {error}
-            </div>
+              <div className="info-box">
+                <strong>👋 Bem-vindo!</strong>
+                <p>
+                  Você foi convidado para este grupo.<br/>
+                  Clique em "Participar" para fazer parte e ver todos os membros.
+                </p>
+              </div>
+            </>
           )}
+        </div>
 
-          {profiles.length === 0 && (
-            <div className="info-box">
-              <strong>✨ Como funciona:</strong><br/>
-              1. Adicione os @usernames dos membros do grupo<br/>
-              2. Veja o alcance total somado em tempo real<br/>
-              3. Compartilhe o poder do seu grupo!
-            </div>
-          )}
-        </form>
-
-        {profiles.length > 0 && (
+        {profiles.length > 0 && userProfile && (
           <div className="profiles-container">
             <div className="total-stats">
               <div className="stats-icon">📊</div>
@@ -304,24 +447,17 @@ export default function GrupoPage() {
               </div>
             </div>
 
-            {/* ✅ DEBUG: Mostrar lista de membros */}
-            <div style={{ 
-              background: 'rgba(0,191,255,0.1)', 
-              padding: '12px', 
-              borderRadius: '8px',
-              marginBottom: '20px',
-              fontSize: '12px',
-              fontFamily: 'monospace'
-            }}>
-              <strong>🐛 DEBUG - Membros carregados ({profiles.length}):</strong>
-              <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                {profiles.map((p, i) => (
-                  <li key={p.username}>
-                    {i === 0 ? '👑' : '👤'} @{p.username} - {formatNumber(p.followers)} seguidores
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {!isUserMember && (
+              <div className="info-box" style={{ marginBottom: '20px' }}>
+                <strong>👀 Modo Visualização</strong>
+                <p>
+                  Você não é mais membro deste grupo, mas pode continuar visualizando as estatísticas.
+                  {' '}<span style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--primary)' }} onClick={handleJoinGroup}>
+                    Clique aqui para participar novamente.
+                  </span>
+                </p>
+              </div>
+            )}
 
             <ProfilesArena 
               profiles={profiles}
@@ -329,11 +465,9 @@ export default function GrupoPage() {
               onImageError={handleImageError}
               onProfileClick={setSelectedProfile}
               creatorUsername={groupData?.creator || ''}
+              currentUsername={userProfile?.username || ''}
+              isUserMember={isUserMember}
             />
-
-            <button className="btn btn-secondary" onClick={handleReset}>
-              🔄 Gerenciar Membros
-            </button>
           </div>
         )}
 
@@ -349,13 +483,14 @@ export default function GrupoPage() {
   )
 }
 
-// ✅ COMPONENTE ProfilesArena - Adicionado creatorUsername prop
 interface ProfilesArenaProps {
   profiles: Profile[]
   onRemove: (username: string) => void
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   creatorUsername: string
+  currentUsername: string
+  isUserMember: boolean
 }
 
 function ProfilesArena({ 
@@ -363,7 +498,9 @@ function ProfilesArena({
   onRemove, 
   onImageError, 
   onProfileClick,
-  creatorUsername 
+  creatorUsername,
+  currentUsername,
+  isUserMember
 }: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
 
@@ -374,12 +511,10 @@ function ProfilesArena({
     }))
   }
 
-  console.log('🎨 ProfilesArena renderizando com', profiles.length, 'perfis')
-
   return (
     <div className="profiles-arena">
       {profiles.map((profile) => {
-        const isAdmin = profile.username.toLowerCase() === creatorUsername.toLowerCase()
+        const isAdmin = profile.isCreator || false
         
         return (
           <MovingProfile 
@@ -391,6 +526,8 @@ function ProfilesArena({
             allPositions={positions}
             updatePosition={updatePosition}
             isAdmin={isAdmin}
+            // Lógica para saber se pode remover: O usuário atual é o criador E o perfil alvo não é ele mesmo
+            canRemove={isUserMember && (creatorUsername.toLowerCase() === currentUsername.toLowerCase()) && (profile.username.toLowerCase() !== creatorUsername.toLowerCase())}
           />
         )
       })}
@@ -406,6 +543,7 @@ interface MovingProfileProps {
   allPositions: Record<string, { x: number; y: number }>
   updatePosition: (username: string, position: { x: number; y: number }) => void
   isAdmin: boolean
+  canRemove: boolean
 }
 
 function MovingProfile({ 
@@ -415,7 +553,8 @@ function MovingProfile({
   onProfileClick, 
   allPositions, 
   updatePosition, 
-  isAdmin 
+  isAdmin,
+  canRemove
 }: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
@@ -442,6 +581,7 @@ function MovingProfile({
 
   const imageSize = calculateImageSize(profile.followers)
 
+  // Funções de Colisão
   const checkCollision = (
     pos1: { x: number; y: number }, 
     pos2: { x: number; y: number }, 
@@ -491,7 +631,16 @@ function MovingProfile({
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
 
-      const speed = 1 + Math.random() * 1.5
+      // 🛠️ LÓGICA DE VELOCIDADE 🛠️
+      let speed;
+      if (profile.isVerified) {
+        // ⚡ Verificados = Rápidos
+        speed = 1.5 + Math.random() * 1.5; 
+      } else {
+        // 🐢 Não Verificados = Lentos (Modo Zen)
+        speed = 0.2 + Math.random() * 0.4;
+      }
+
       const angle = Math.random() * Math.PI * 2
       velocityRef.current = {
         x: Math.cos(angle) * speed,
@@ -554,7 +703,7 @@ function MovingProfile({
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [isHovered, allPositions, profile.username, updatePosition, imageSize])
+  }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
@@ -563,22 +712,15 @@ function MovingProfile({
     if (!arena) return
 
     const arenaWidth = arena.offsetWidth
-    const arenaHeight = arena.offsetHeight
     const tooltipHeight = 80
     const tooltipWidth = 150
 
     let vertical = 'top'
     let horizontal = 'center'
 
-    if (position.y < tooltipHeight) {
-      vertical = 'bottom'
-    }
-
-    if (position.x < tooltipWidth / 2) {
-      horizontal = 'left'
-    } else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) {
-      horizontal = 'right'
-    }
+    if (position.y < tooltipHeight) vertical = 'bottom'
+    if (position.x < tooltipWidth / 2) horizontal = 'left'
+    else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
 
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
@@ -610,26 +752,39 @@ function MovingProfile({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* 👑 COROA FIXA SOBRE A FOTO */}
       {isAdmin && (
         <div className="admin-crown">👑</div>
       )}
       
-      <button 
-        className="remove-btn"
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove(profile.username)
-        }}
-        title="Remover perfil"
-      >
-        ×
-      </button>
+      {canRemove && (
+        <button 
+          className="remove-btn"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(profile.username)
+          }}
+          title="Remover perfil"
+        >
+          ×
+        </button>
+      )}
       
       {isHovered && (
         <div className={getTooltipClass()}>
           <div className="profile-username">
             @{profile.username}
-            {isAdmin && <span className="admin-badge"> 👑 ADM</span>}
+            {/* 👑 TEXTO ADM DOURADO */}
+            {isAdmin && (
+              <span style={{ 
+                color: '#FFD700', 
+                fontWeight: 'bold', 
+                marginLeft: '6px',
+                textShadow: '0 0 5px rgba(255, 215, 0, 0.5)'
+              }}>
+                ADM
+              </span>
+            )}
           </div>
           <div className="profile-followers">
             {formatNumber(profile.followers)} seguidores
@@ -666,16 +821,13 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   }
 
   const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
-      onClose()
-    }
+    if (e.target === e.currentTarget) onClose()
   }
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
-    
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
@@ -693,7 +845,11 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
             onError={(e) => onImageError(e, profile.username)}
           />
           <div className="modal-user-info">
-            <div className="modal-username">@{profile.username}</div>
+            <div className="modal-username">
+              @{profile.username}
+              {/* Opcional: Mostrar badge no modal também */}
+              {profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
+            </div>
             <div className="modal-fullname">{profile.fullName || profile.username}</div>
           </div>
         </div>

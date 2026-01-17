@@ -21,7 +21,6 @@ interface Group {
     name: string
   }
   memberCount: number
-  // Adicionado para tipagem correta na filtragem local
   members?: { username: string }[] 
 }
 
@@ -36,62 +35,56 @@ export default function Home() {
       setIsLoading(true)
       console.log('🔍 Carregando grupos de:', username)
       
-      const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}`)
+      // ✅ CORREÇÃO 1: Adicionado timestamp para evitar cache do navegador
+      // ✅ CORREÇÃO 2: Adicionado headers 'no-store'
+      const timestamp = new Date().getTime()
+      const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&_t=${timestamp}`, {
+        cache: 'no-store',
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      })
       
       if (response.ok) {
         const data = await response.json()
         
         if (data.success && data.groups) {
-          // Tipagem forçada para garantir que venha como Group[]
           const dbGroups: Group[] = data.groups 
+          
+          // ✅ CORREÇÃO CRÍTICA:
+          // Se a API respondeu, confiamos nela! NÃO fazemos merge com localStorage antigo.
+          // O merge estava trazendo de volta grupos que o usuário já tinha saído.
           setUserGroups(dbGroups)
           
-          // Lógica de Backup Local (opcional, mantive a sua lógica)
-          const savedGroupsStr = localStorage.getItem('groups') || '[]'
-          const localGroups: Group[] = JSON.parse(savedGroupsStr)
-          
-          // Set para garantir unicidade de IDs
-          const allGroupIds = new Set([
-            ...dbGroups.map(g => g.id),
-            ...localGroups.map(g => g.id)
-          ])
-          
-          const mergedGroups = Array.from(allGroupIds).map(id => {
-            const dbGroup = dbGroups.find(g => g.id === id)
-            const localGroup = localGroups.find(g => g.id === id)
-            return dbGroup || localGroup
-          }).filter((g): g is Group => !!g) // Type guard para remover undefined
-          
-          setUserGroups(mergedGroups)
+          // Atualizamos o backup local com a verdade absoluta do servidor
+          localStorage.setItem('groups', JSON.stringify(dbGroups))
           
         } else {
           setUserGroups([])
         }
       } else {
-        // Fallback LocalStorage
+        // Fallback LocalStorage (Só entra aqui se a API falhar/Internet cair)
         console.error('❌ Erro API, usando local:', response.status)
         const savedGroups = localStorage.getItem('groups')
         if (savedGroups) {
           const groups: Group[] = JSON.parse(savedGroups)
-          const userGroupsList = groups
-            .filter(g => 
-              g.members?.some(m => 
-                m.username?.toLowerCase() === username.toLowerCase()
-              )
-            )
-            .map(g => ({
-              id: g.id,
-              name: g.name,
-              icon: g.icon,
-              memberCount: g.members?.length || 0
-            }))
-          
+          // Filtragem de segurança local
+          const userGroupsList = groups.filter(g => 
+            g.members?.some(m => m.username?.toLowerCase() === username.toLowerCase())
+          )
           setUserGroups(userGroupsList)
         }
       }
     } catch (error) {
       console.error('❌ Erro ao carregar grupos:', error)
-      setUserGroups([])
+      // Tenta recuperar do local storage em caso de erro de rede
+      const savedGroups = localStorage.getItem('groups')
+      if (savedGroups) {
+         setUserGroups(JSON.parse(savedGroups))
+      } else {
+         setUserGroups([])
+      }
     } finally {
       setIsLoading(false)
     }
@@ -111,7 +104,7 @@ export default function Home() {
     } else {
       setIsLoading(false)
     }
-  }, [loadUserGroups]) // Adicionado loadUserGroups nas dependências
+  }, [loadUserGroups])
 
   const handleLeaveGroup = async (groupId: string, groupName: string) => {
     if (!userProfile) return
@@ -146,7 +139,11 @@ export default function Home() {
         alert('✅ Você saiu do grupo com sucesso!')
       }
 
+      // Remove da tela e do local storage imediatamente
       removeFromLocalStorage(groupId)
+
+      // Opcional: Recarregar a lista do servidor para garantir sincronia total
+      // loadUserGroups(userProfile.username) 
 
     } catch (error) {
       console.error('❌ Erro ao sair do grupo:', error)
@@ -156,13 +153,16 @@ export default function Home() {
 
   // Função auxiliar para limpar localStorage e Estado
   const removeFromLocalStorage = (groupId: string) => {
+    // 1. Atualiza visualmente agora (UI Optimistic)
+    setUserGroups(prev => prev.filter(g => g.id !== groupId))
+
+    // 2. Atualiza o "backup" local para não voltar a assombrar
     const savedGroups = localStorage.getItem('groups')
     if (savedGroups) {
       const groups: Group[] = JSON.parse(savedGroups)
       const updatedGroups = groups.filter(g => g.id !== groupId)
       localStorage.setItem('groups', JSON.stringify(updatedGroups))
     }
-    setUserGroups(prev => prev.filter(g => g.id !== groupId))
   }
 
   return (

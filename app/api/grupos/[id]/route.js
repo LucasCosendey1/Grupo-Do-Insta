@@ -1,7 +1,6 @@
 import { sql } from '@vercel/postgres'
 
-// 🚨 COMANDOS ANTI-CACHE DO NEXT.JS (SERVER-SIDE)
-// Isso obriga a rota a ser recriada a cada requisição, ignorando o cache estático do servidor.
+// 🚨 COMANDOS ANTI-CACHE
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
@@ -17,7 +16,7 @@ export async function GET(request, { params }) {
       return Response.json({ error: 'ID não fornecido' }, { status: 400 })
     }
 
-    // Buscar dados do grupo
+    // 1. Buscar dados do grupo (para saber QUEM é o criador)
     const grupoResult = await sql`
       SELECT * FROM grupos WHERE id = ${id}
     `
@@ -27,10 +26,10 @@ export async function GET(request, { params }) {
     }
 
     const grupo = grupoResult.rows[0]
-    console.log('✅ [API] Grupo:', grupo.name)
+    const criadorUsername = grupo.creator_username || '' // Guarda o nome do dono
+    console.log('✅ [API] Grupo:', grupo.name, '| Dono:', criadorUsername)
 
-    // Buscar TODOS os membros
-    // Dica: Adicionei um timestamp inútil no final da query para garantir que o banco não cacheie a query exata
+    // 2. Buscar TODOS os membros
     const timestamp = Date.now() 
     console.log('📋 [API] Buscando todos os membros...')
     
@@ -47,25 +46,31 @@ export async function GET(request, { params }) {
       added_at
     FROM grupo_membros 
     WHERE grupo_id = ${id}
-    -- O filtro abaixo não altera o resultado, mas força o Postgres a reavaliar a query
     AND ${timestamp} = ${timestamp} 
     ORDER BY added_at ASC
     `
 
     console.log('📊 [API] Membros encontrados:', membrosResult.rows.length)
 
-    // Montar array de perfis
-    const profiles = membrosResult.rows.map((m) => ({
-      username: m.username,
-      fullName: m.full_name || m.username,
-      profilePic: m.profile_pic || `https://ui-avatars.com/api/?name=${m.username}&size=200&background=00bfff&color=fff`,
-      followers: m.followers || 0,
-      following: m.following || 0,
-      posts: m.posts || 0,
-      biography: m.biography || '',
-      isPrivate: m.is_private || false,
-      isVerified: m.is_verified || false
-    }))
+    // 3. Montar array de perfis com a tag "isCreator"
+    const profiles = membrosResult.rows.map((m) => {
+      // Verifica se este membro é o dono (case-insensitive para segurança)
+      const ehODono = m.username.toLowerCase() === criadorUsername.toLowerCase()
+
+      return {
+        username: m.username,
+        fullName: m.full_name || m.username,
+        profilePic: m.profile_pic || `https://ui-avatars.com/api/?name=${m.username}&size=200&background=00bfff&color=fff`,
+        followers: m.followers || 0,
+        following: m.following || 0,
+        posts: m.posts || 0,
+        biography: m.biography || '',
+        isPrivate: m.is_private || false,
+        isVerified: m.is_verified || false,
+        // ✨ AQUI ESTÁ A MÁGICA:
+        isCreator: ehODono // Retorna true ou false
+      }
+    })
 
     const responseData = {
       success: true,
@@ -81,8 +86,6 @@ export async function GET(request, { params }) {
       }
     }
 
-    // ✅ HEADERS ANTI-CACHE (CLIENT-SIDE / BROWSER)
-    // Isso avisa o navegador e a CDN da Vercel para não guardarem nada
     return new Response(JSON.stringify(responseData), {
       status: 200,
       headers: {

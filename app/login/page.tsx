@@ -93,8 +93,20 @@ export default function LoginPage() {
       alert('Por favor, selecione um perfil do Instagram')
       return
     }
+    
+    // Salvar perfil no localStorage
     localStorage.setItem('userProfile', JSON.stringify(selectedProfile))
-    router.push('/')
+    
+    // ✅ VERIFICAR SE HÁ REDIRECIONAMENTO PENDENTE
+    const redirectUrl = localStorage.getItem('redirectAfterLogin')
+    
+    if (redirectUrl) {
+      console.log('🔄 Redirecionando para:', redirectUrl)
+      localStorage.removeItem('redirectAfterLogin')
+      router.push(redirectUrl)
+    } else {
+      router.push('/')
+    }
   }
 
   const formatNumber = (num: number): string => {
