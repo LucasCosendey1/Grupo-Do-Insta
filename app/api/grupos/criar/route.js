@@ -2,7 +2,8 @@ import { sql } from '@vercel/postgres'
 
 export async function POST(request) {
   try {
-    const { name, icon, creatorUsername } = await request.json()
+    // ✅ CORREÇÃO: Recebendo 'creatorData' (perfil completo) do Frontend
+    const { name, icon, creatorUsername, creatorData: clientCreatorData } = await request.json()
 
     if (!name || !creatorUsername) {
       return Response.json({ error: 'Nome e criador são obrigatórios' }, { status: 400 })
@@ -13,21 +14,59 @@ export async function POST(request) {
     // Gerar ID único
     const groupId = `G-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 
-    // Buscar dados completos do criador
-    console.log('🔍 Buscando dados do criador...')
-    
-    const origin = request.headers.get('origin') || 'http://localhost:3000'
-    const scrapeResponse = await fetch(`${origin}/api/scrape?username=${creatorUsername}`)
-    
-    let creatorData = null
-    if (scrapeResponse.ok) {
-      creatorData = await scrapeResponse.json()
-      console.log('✅ Dados do criador obtidos')
-    } else {
-      console.warn('⚠️ Não foi possível buscar dados do criador, usando dados básicos')
+    // --- LÓGICA DE DADOS DO CRIADOR ---
+    let dadosFinais = null
+
+    // 1. TENTATIVA RÁPIDA (Prioridade): Usar dados enviados pelo Frontend
+    if (clientCreatorData && clientCreatorData.profilePic) {
+      console.log('⚡ Usando dados enviados pelo frontend (Sem Scrape - Foto Garantida)')
+      dadosFinais = {
+        username: creatorUsername,
+        fullName: clientCreatorData.fullName || creatorUsername,
+        profilePic: clientCreatorData.profilePic, // A foto certa vem daqui!
+        followers: clientCreatorData.followers || 0,
+        following: clientCreatorData.following || 0,
+        posts: clientCreatorData.posts || 0,
+        biography: clientCreatorData.biography || '',
+        isPrivate: clientCreatorData.isPrivate || false,
+        isVerified: clientCreatorData.isVerified || false
+      }
+    } 
+    // 2. TENTATIVA LENTA (Backup): Fazer scrape interno (costuma falhar no Vercel)
+    else {
+      console.log('⚠️ Dados não vieram do front. Tentando scrape interno (risco de avatar genérico)...')
+      
+      const protocol = request.headers.get('x-forwarded-proto') || 'https'
+      const host = request.headers.get('x-forwarded-host') || request.headers.get('host')
+      const scrapeUrl = `${protocol}://${host}/api/scrape?username=${encodeURIComponent(creatorUsername)}`
+      
+      let scrapedData = null
+      try {
+        const scrapeResponse = await fetch(scrapeUrl, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }
+        })
+        if (scrapeResponse.ok) scrapedData = await scrapeResponse.json()
+      } catch (e) {
+        console.warn('⚠️ Falha no scrape interno:', e.message)
+      }
+
+      // Fallback Genérico
+      dadosFinais = {
+        username: creatorUsername,
+        fullName: scrapedData?.fullName || creatorUsername,
+        profilePic: scrapedData?.profilePic || `https://ui-avatars.com/api/?name=${encodeURIComponent(creatorUsername)}&size=200&background=00bfff&color=fff`,
+        followers: scrapedData?.followers || 0,
+        isVerified: scrapedData?.isVerified || false,
+        isPrivate: false,
+        following: 0,
+        posts: 0,
+        biography: ''
+      }
     }
 
-    // Criar grupo
+    console.log('💾 Salvando grupo no banco...')
+
+    // Inserir Grupo
     await sql`
       INSERT INTO grupos (id, name, icon_emoji, icon_name, creator_username)
       VALUES (
@@ -39,42 +78,33 @@ export async function POST(request) {
       )
     `
 
-    console.log('✅ Grupo criado no banco')
-
-    // Adicionar criador como primeiro membro COM DADOS COMPLETOS
+    // Inserir Criador como Membro
     await sql`
       INSERT INTO grupo_membros (
-        grupo_id, 
-        username,
-        full_name,
-        profile_pic,
-        followers,
-        following,
-        posts,
-        biography,
-        is_private,
-        is_verified
+        grupo_id, username, full_name, profile_pic, followers, 
+        following, posts, biography, is_private, is_verified
       )
       VALUES (
         ${groupId},
-        ${creatorUsername},
-        ${creatorData?.fullName || creatorUsername},
-        ${creatorData?.profilePic || ''},
-        ${creatorData?.followers || 0},
-        ${creatorData?.following || 0},
-        ${creatorData?.posts || 0},
-        ${creatorData?.biography || ''},
-        ${creatorData?.isPrivate || false},
-        ${creatorData?.isVerified || false}
+        ${dadosFinais.username},
+        ${dadosFinais.fullName},
+        ${dadosFinais.profilePic},
+        ${dadosFinais.followers},
+        ${dadosFinais.following},
+        ${dadosFinais.posts},
+        ${dadosFinais.biography},
+        ${dadosFinais.isPrivate},
+        ${dadosFinais.isVerified}
       )
     `
 
-    console.log('✅ Criador adicionado como membro com dados completos')
+    console.log('✅ Grupo criado com sucesso!')
 
     return Response.json({
       success: true,
       groupId: groupId,
-      name: name
+      name: name,
+      creatorData: dadosFinais
     })
 
   } catch (error) {

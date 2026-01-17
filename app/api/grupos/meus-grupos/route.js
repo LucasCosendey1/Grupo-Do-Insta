@@ -1,5 +1,9 @@
 import { sql } from '@vercel/postgres'
 
+// 🚨 OBRIGATÓRIO: Impede que o Vercel faça cache estático dessa rota
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -9,7 +13,8 @@ export async function GET(request) {
       return Response.json({ error: 'Username não fornecido' }, { status: 400 })
     }
 
-    console.log('🔍 Buscando grupos do usuário:', username)
+    // Timestamp para logar que a requisição é fresca
+    console.log(`🔍 [${new Date().toISOString()}] Buscando grupos frescos para:`, username)
 
     // Buscar todos os grupos onde o usuário é membro
     const result = await sql`
@@ -38,12 +43,21 @@ export async function GET(request) {
       },
       creator: row.creator_username,
       memberCount: parseInt(row.member_count),
-      createdAt: row.created_at
+      createdAt: row.created_at,
+      // 💡 ADICIONAL: Injetamos o membro atual para compatibilidade com filtros do frontend
+      members: [{ username: username }]
     }))
 
-    return Response.json({
-      success: true,
-      groups: groups
+    // Retornamos com headers que PROÍBEM cache no navegador e na CDN
+    return new Response(JSON.stringify({ success: true, groups }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Surrogate-Control': 'no-store'
+      }
     })
 
   } catch (error) {
