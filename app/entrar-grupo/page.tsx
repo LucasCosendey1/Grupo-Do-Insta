@@ -23,16 +23,16 @@ export default function EntrarGrupoPage() {
     setError('')
 
     try {
-      // ✅ EXTRAIR ID DO GRUPO (suporta código OU link completo)
+      // ✅ EXTRAÇÃO INTELIGENTE DO ID
       const groupId = extractGroupId(groupInput.trim())
       
       if (!groupId) {
-        setError('Código ou link inválido')
+        setError('Link inválido. O código deve começar com "G-"')
         setIsLoading(false)
         return
       }
 
-      console.log('🔍 Buscando grupo:', groupId)
+      console.log('🔍 ID Extraído:', groupId)
 
       // ✅ BUSCAR NO POSTGRESQL VIA API
       const timestamp = new Date().getTime()
@@ -49,12 +49,7 @@ export default function EntrarGrupoPage() {
         
         if (data.success && data.group) {
           console.log('✅ Grupo encontrado:', data.group.name)
-          
-          // ✅ REDIRECIONAR PARA PÁGINA DO GRUPO
-          // A página do grupo já tem a lógica de:
-          // - Mostrar membros se usuário logado
-          // - Pedir login se não estiver logado
-          // - Permitir entrar no grupo
+          // Redireciona para a página do grupo
           router.push(`/grupo/${groupId}`)
         } else {
           setError('Grupo não encontrado')
@@ -66,40 +61,47 @@ export default function EntrarGrupoPage() {
       }
 
     } catch (err) {
-      console.error('❌ Erro ao buscar grupo:', err)
+      console.error('❌ Erro de conexão:', err)
       setError('Erro de conexão. Verifique sua internet.')
     } finally {
       setIsLoading(false)
     }
   }
 
-  // ✅ FUNÇÃO PARA EXTRAIR ID DO GRUPO
-  // Suporta:
-  // - Código direto: "G-1234567890-abc123"
-  // - Link completo: "https://seu-app.vercel.app/grupo/G-1234567890-abc123"
-  // - Link relativo: "/grupo/G-1234567890-abc123"
+  // ✅ FUNÇÃO BLINDADA PARA EXTRAIR ID
+  // Funciona com localhost, vercel, instadogrupo.com.br ou texto misturado
   const extractGroupId = (input: string): string | null => {
-    // Remover espaços
-    input = input.trim()
-
-    // Se for um link (contém "/grupo/")
-    if (input.includes('/grupo/')) {
-      const match = input.match(/\/grupo\/([^/?&#]+)/)
-      return match ? match[1] : null
+    // 1. Procura EXATAMENTE pelo padrão do seu ID: "G-" seguido de números, traço e letras
+    // Exemplo: G-1768691410292-cxvd8u
+    const idPattern = /(G-\d+-[a-zA-Z0-9]+)/i
+    
+    const match = input.match(idPattern)
+    
+    if (match) {
+      // Retorna o ID limpo, ignorando qualquer domínio ou lixo ao redor
+      return match[1] 
     }
 
-    // Se começar com "G-" é um código direto
-    if (input.startsWith('G-')) {
-      return input
+    // 2. Fallback simples (caso o ID seja curto ou antigo apenas "G-123")
+    if (input.includes('/grupo/')) {
+      const parts = input.split('/grupo/')
+      // Pega a parte depois de /grupo/ e limpa query params (?...)
+      const potentialId = parts[1]?.split('?')[0]?.split('#')[0]
+      if (potentialId && potentialId.startsWith('G-')) return potentialId
+    }
+
+    // 3. Se o usuário digitou apenas o código
+    if (input.trim().startsWith('G-')) {
+      return input.trim()
     }
 
     return null
   }
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    // Permitir paste de links longos
     const pastedText = e.clipboardData.getData('text')
-    if (pastedText.includes('/grupo/')) {
+    // Se o texto colado tiver um ID válido, já limpamos o erro
+    if (pastedText.includes('G-')) {
       setGroupInput(pastedText)
       setError('')
     }
@@ -134,16 +136,16 @@ export default function EntrarGrupoPage() {
                 value={groupInput}
                 onChange={(e) => {
                   setGroupInput(e.target.value)
-                  setError('') // Limpar erro ao digitar
+                  setError('')
                 }}
                 onPaste={handlePaste}
-                placeholder="Cole o link completo ou o código do grupo"
+                placeholder="Cole o link (instadogrupo.com.br/...)"
                 className="input"
                 autoFocus
                 disabled={isLoading}
               />
               <div className="input-hint">
-                Exemplo: https://seu-app.vercel.app/grupo/G-123456...
+                Aceita links do Vercel, Localhost e InstaDoGrupo
               </div>
             </div>
 
@@ -176,19 +178,9 @@ export default function EntrarGrupoPage() {
           <div className="info-box" style={{ marginTop: '32px' }}>
             <strong>💡 Como funciona:</strong>
             <p>
-              1. Peça o link ou código do grupo para um membro<br/>
-              2. Cole no campo acima (aceita link completo)<br/>
+              1. Peça o link do grupo para um amigo<br/>
+              2. Cole no campo acima (não importa o domínio)<br/>
               3. Clique em "Acessar Grupo"<br/>
-              4. Você verá os membros e poderá entrar no grupo
-            </p>
-          </div>
-
-          <div className="info-box" style={{ marginTop: '16px', background: 'rgba(0, 191, 255, 0.03)' }}>
-            <strong>🔐 Sobre Login:</strong>
-            <p>
-              • <strong>Se estiver logado:</strong> Pode ver membros e entrar imediatamente<br/>
-              • <strong>Se não estiver logado:</strong> O sistema pedirá seu @username<br/>
-              • Você será redirecionado de volta após fazer login
             </p>
           </div>
 
@@ -201,53 +193,6 @@ export default function EntrarGrupoPage() {
               <span className="btn-icon">➕</span>
               <span>Criar Novo Grupo</span>
             </Link>
-          </div>
-
-          <div style={{ marginTop: '24px' }}>
-            <div style={{ 
-              color: 'rgba(255, 255, 255, 0.5)', 
-              fontSize: '12px', 
-              marginBottom: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-              fontWeight: '600'
-            }}>
-              Formatos Aceitos:
-            </div>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 14px',
-                background: 'rgba(0, 191, 255, 0.05)',
-                border: '1px solid rgba(0, 191, 255, 0.2)',
-                borderRadius: '8px',
-                fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.7)'
-              }}>
-                <span style={{ fontSize: '16px' }}>🔗</span>
-                <span>Link completo: https://seu-app.vercel.app/grupo/G-...</span>
-              </div>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '10px 14px',
-                background: 'rgba(0, 191, 255, 0.05)',
-                border: '1px solid rgba(0, 191, 255, 0.2)',
-                borderRadius: '8px',
-                fontSize: '13px',
-                color: 'rgba(255, 255, 255, 0.7)'
-              }}>
-                <span style={{ fontSize: '16px' }}>📋</span>
-                <span>Código: G-1234567890-abc123</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

@@ -38,14 +38,36 @@ export async function POST(request) {
       console.log('')
       console.log('🔍 profileData incompleto, buscando via API...')
       
-      const origin = request.headers.get('origin') || 'http://localhost:3000'
-      const scrapeResponse = await fetch(`${origin}/api/scrape?username=${username}`)
+      // ✅ CORREÇÃO: Detectar URL base corretamente no Vercel
+      const getBaseUrl = () => {
+        const host = request.headers.get('host')
+        const protocol = request.headers.get('x-forwarded-proto') || 'http'
+        
+        if (host) {
+          console.log('📍 Usando host da requisição:', host)
+          return `${protocol}://${host}`
+        }
+        
+        if (process.env.VERCEL_URL) {
+          console.log('📍 Usando VERCEL_URL:', process.env.VERCEL_URL)
+          return `https://${process.env.VERCEL_URL}`
+        }
+        
+        console.log('📍 Usando localhost (desenvolvimento)')
+        return 'http://localhost:3000'
+      }
+      
+      const baseUrl = getBaseUrl()
+      console.log('🌐 Base URL final:', baseUrl)
+      
+      const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${username}`)
       
       if (scrapeResponse.ok) {
         fullProfileData = await scrapeResponse.json()
         console.log('✅ Dados obtidos da API scrape')
       } else {
         console.warn('⚠️ Scrape falhou, usando dados básicos')
+        console.warn('   Status:', scrapeResponse.status)
         fullProfileData = {
           username: username,
           fullName: username,
