@@ -951,3 +951,213 @@ h1 {
   .modal-stats, .modal-bio-section, .modal-posts-section { padding: 20px 24px; }
   .modal-link-btn { margin: 20px 24px 24px; }
 }
+
+/* ============================================ */
+/* ESTILOS ADICIONAIS PARA ENTRAR-GRUPO */
+/* Adicione isso ao final do seu app/globals.css */
+/* ============================================ */
+
+/* Hint de input */
+.input-hint {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+/* Contador de caracteres */
+.char-count {
+  position: absolute;
+  bottom: -22px;
+  right: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Seção de exemplos */
+.examples-section {
+  margin-top: 24px;
+}
+
+.example-format {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(0, 191, 255, 0.05);
+  border: 1px solid rgba(0, 191, 255, 0.2);
+  border-radius: 8px;
+  transition: var(--transition-default);
+}
+
+.example-format:hover {
+  background: rgba(0, 191, 255, 0.08);
+  border-color: rgba(0, 191, 255, 0.3);
+}
+
+.format-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.format-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  word-break: break-all;
+}
+
+/* Botão de login */
+.btn-login {
+  background: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  color: var(--primary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+  transition: var(--transition-default);
+}
+
+.btn-login:hover {
+  background: rgba(var(--primary-rgb), 0.15);
+  border-color: var(--primary);
+  box-shadow: 0 0 20px rgba(var(--primary-rgb), 0.3);
+}
+
+/* Input wrapper para loading spinner */
+.input-wrapper {
+  position: relative;
+}
+
+.search-loading {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Preview badge */
+.preview-label {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.preview-name {
+  color: var(--text-main);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.preview-members {
+  color: rgba(0, 191, 255, 0.9);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Founder section */
+.founder-section {
+  margin-top: 28px;
+}
+
+.founder-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.label-icon {
+  font-size: 16px;
+}
+
+/* Modal específico de login */
+.login-modal {
+  max-width: 500px;
+}
+
+.modal-header {
+  text-align: center;
+  padding: 32px 32px 24px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modal-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 0 20px rgba(var(--primary-rgb), 0.5));
+  animation: float 3s ease-in-out infinite;
+}
+
+.modal-header h2 {
+  color: var(--text-main);
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.modal-header p {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.modal-body {
+  padding: 24px 32px 32px;
+}
+
+.modal-divider {
+  position: relative;
+  text-align: center;
+  margin: 24px 0;
+}
+
+.modal-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border-light);
+}
+
+.modal-divider span {
+  position: relative;
+  background: var(--bg-glass);
+  padding: 0 16px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Responsividade adicional */
+@media (max-width: 768px) {
+  .format-text {
+    font-size: 11px;
+  }
+  
+  .example-format {
+    padding: 8px 12px;
+  }
+  
+  .input-hint {
+    font-size: 11px;
+  }
+}
