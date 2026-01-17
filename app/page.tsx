@@ -29,30 +29,20 @@ export default function Home() {
   const [userGroups, setUserGroups] = useState<Group[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
-  // Função auxiliar para limpar localStorage e Estado (Movida para cima para ser usada no load)
-  const removeFromLocalStorage = useCallback((groupId: string) => {
-    setUserGroups(prev => prev.filter(g => g.id !== groupId))
-    const savedGroups = localStorage.getItem('groups')
-    if (savedGroups) {
-      const groups: Group[] = JSON.parse(savedGroups)
-      const updatedGroups = groups.filter((g: Group) => g.id !== groupId)
-      localStorage.setItem('groups', JSON.stringify(updatedGroups))
-    }
-  }, [])
-
+  // Memoizando a função para usar no useEffect sem warnings
   const loadUserGroups = useCallback(async (username: string) => {
     try {
       setIsLoading(true)
+      console.log('🔍 Carregando grupos de:', username)
       
-      // Timestamp para ignorar cache do navegador agressivo
-      const timestamp = Date.now()
-      const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&t=${timestamp}`, {
-        method: 'GET',
-        cache: 'no-store', // Força a Vercel e o navegador a não usarem cache
+      // ✅ CORREÇÃO 1: Adicionado timestamp para evitar cache do navegador
+      // ✅ CORREÇÃO 2: Adicionado headers 'no-store'
+      const timestamp = new Date().getTime()
+      const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&_t=${timestamp}`, {
+        cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache',
-          'Expires': '0'
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
       })
       
@@ -60,25 +50,41 @@ export default function Home() {
         const data = await response.json()
         
         if (data.success && data.groups) {
-          // A API é a verdade absoluta. Substituímos o estado e o localstorage.
           const dbGroups: Group[] = data.groups 
+          
+          // ✅ CORREÇÃO CRÍTICA:
+          // Se a API respondeu, confiamos nela! NÃO fazemos merge com localStorage antigo.
+          // O merge estava trazendo de volta grupos que o usuário já tinha saído.
           setUserGroups(dbGroups)
+          
+          // Atualizamos o backup local com a verdade absoluta do servidor
           localStorage.setItem('groups', JSON.stringify(dbGroups))
+          
         } else {
           setUserGroups([])
-          localStorage.setItem('groups', JSON.stringify([]))
         }
       } else {
-        // Se a API falhar, tentamos o local storage como última opção
+        // Fallback LocalStorage (Só entra aqui se a API falhar/Internet cair)
+        console.error('❌ Erro API, usando local:', response.status)
         const savedGroups = localStorage.getItem('groups')
         if (savedGroups) {
-          setUserGroups(JSON.parse(savedGroups))
+          const groups: Group[] = JSON.parse(savedGroups)
+          // Filtragem de segurança local
+          const userGroupsList = groups.filter(g => 
+            g.members?.some(m => m.username?.toLowerCase() === username.toLowerCase())
+          )
+          setUserGroups(userGroupsList)
         }
       }
     } catch (error) {
       console.error('❌ Erro ao carregar grupos:', error)
+      // Tenta recuperar do local storage em caso de erro de rede
       const savedGroups = localStorage.getItem('groups')
-      if (savedGroups) setUserGroups(JSON.parse(savedGroups))
+      if (savedGroups) {
+         setUserGroups(JSON.parse(savedGroups))
+      } else {
+         setUserGroups([])
+      }
     } finally {
       setIsLoading(false)
     }
@@ -106,10 +112,6 @@ export default function Home() {
     const confirm = window.confirm(`Tem certeza que deseja sair do grupo "${groupName}"?`)
     if (!confirm) return
 
-    // Otimismo: remove da tela antes mesmo da resposta da API para parecer instantâneo
-    const previousGroups = [...userGroups]
-    setUserGroups(prev => prev.filter(g => g.id !== groupId))
-
     try {
       const response = await fetch('/api/grupos/sair', {
         method: 'POST',
@@ -120,30 +122,60 @@ export default function Home() {
         })
       })
 
-      if (response.ok) {
-        // Se deu certo, removemos definitivamente do cache local
+      const data = await response.json()
+
+      // Tratamento para grupo que só existe localmente
+      if (!response.ok && data.error?.includes('não encontrado')) {
         removeFromLocalStorage(groupId)
-      } else {
-        // Se deu erro na API, voltamos o grupo para a tela
-        setUserGroups(previousGroups)
-        alert('Erro ao sair do grupo no servidor.')
+        alert('✅ Você saiu do grupo (removido do local)!')
+        return
       }
+
+      if (!response.ok) throw new Error(data.error || 'Erro ao sair')
+
+      if (data.groupDeleted) {
+        alert('🗑️ Você era o último membro. O grupo foi deletado.')
+      } else {
+        alert('✅ Você saiu do grupo com sucesso!')
+      }
+
+      // Remove da tela e do local storage imediatamente
+      removeFromLocalStorage(groupId)
+
+      // Opcional: Recarregar a lista do servidor para garantir sincronia total
+      // loadUserGroups(userProfile.username) 
+
     } catch (error) {
-      setUserGroups(previousGroups)
       console.error('❌ Erro ao sair do grupo:', error)
+      alert('Erro ao sair do grupo.')
+    }
+  }
+
+  // Função auxiliar para limpar localStorage e Estado
+  const removeFromLocalStorage = (groupId: string) => {
+    // 1. Atualiza visualmente agora (UI Optimistic)
+    setUserGroups(prev => prev.filter(g => g.id !== groupId))
+
+    // 2. Atualiza o "backup" local para não voltar a assombrar
+    const savedGroups = localStorage.getItem('groups')
+    if (savedGroups) {
+      const groups: Group[] = JSON.parse(savedGroups)
+      const updatedGroups = groups.filter(g => g.id !== groupId)
+      localStorage.setItem('groups', JSON.stringify(updatedGroups))
     }
   }
 
   return (
     <div className="container">
       <div className="card">
+        {/* Header do Usuário */}
         <div className="user-header-actions">
           {userProfile ? (
             <div className="user-info-display">
               <span className="user-handle">@{userProfile.username}</span>
               <button
                 onClick={() => {
-                  localStorage.clear() // Limpa tudo ao sair
+                  localStorage.removeItem('userProfile')
                   setUserProfile(null)
                   setUserGroups([])
                 }}
@@ -165,10 +197,31 @@ export default function Home() {
         </div>
 
         <div className="welcome-content">
+          <div className="features-grid">
+            <div className="feature-card">
+              <div className="feature-icon">👥</div>
+              <h3>Crie Grupos</h3>
+              <p>Monte grupos personalizados e veja o alcance total.</p>
+            </div>
+            
+            <div className="feature-card">
+              <div className="feature-icon">📊</div>
+              <h3>Métricas</h3>
+              <p>Acompanhe o crescimento em tempo real.</p>
+            </div>
+            
+            <div className="feature-card">
+              <div className="feature-icon">🚀</div>
+              <h3>Compartilhe</h3>
+              <p>Expanda o alcance do seu grupo.</p>
+            </div>
+          </div>
+
           <div className="action-buttons">
             <Link href="/criar-grupo" className="btn btn-primary">
               <span className="btn-icon">➕</span> Criar Grupo
             </Link>
+            
             <Link href="/entrar-grupo" className="btn btn-secondary">
               <span className="btn-icon">🔗</span> Entrar em Grupo
             </Link>
