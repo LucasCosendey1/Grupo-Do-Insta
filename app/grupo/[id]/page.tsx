@@ -243,7 +243,7 @@ export default function GrupoPage() {
     }
   }
 
-  // ✅ SAIR DO GRUPO (CORRIGIDO)
+  // ✅ SAIR DO GRUPO
   const handleLeaveGroup = async () => {
     if (!userProfile) return
 
@@ -271,10 +271,6 @@ export default function GrupoPage() {
       } else {
         alert('✅ Você saiu do grupo!')
         setIsUserMember(false)
-        
-        // 🚨 CORREÇÃO CRÍTICA AQUI 🚨
-        // Removemos o usuário da lista 'profiles' imediatamente.
-        // Isso remove a bola da tela e corrige o total de seguidores.
         setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase()))
       }
 
@@ -526,7 +522,6 @@ function ProfilesArena({
             allPositions={positions}
             updatePosition={updatePosition}
             isAdmin={isAdmin}
-            // Lógica para saber se pode remover: O usuário atual é o criador E o perfil alvo não é ele mesmo
             canRemove={isUserMember && (creatorUsername.toLowerCase() === currentUsername.toLowerCase()) && (profile.username.toLowerCase() !== creatorUsername.toLowerCase())}
           />
         )
@@ -563,6 +558,9 @@ function MovingProfile({
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
+
+  // ✅ CONSTANTE DE SEGURANÇA PARA AS BORDAS
+  const BOUNDARY_PADDING = 10 
 
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 50
@@ -626,19 +624,19 @@ function MovingProfile({
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
-      const initialX = Math.random() * (arenaWidth - imageSize)
-      const initialY = Math.random() * (arenaHeight - imageSize)
+      // ✅ Inicializa com padding para não nascer colado na borda
+      const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
+      const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
+      
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
 
-      // 🛠️ LÓGICA DE VELOCIDADE 🛠️
+      // 🛠️ LÓGICA DE VELOCIDADE
       let speed;
       if (profile.isVerified) {
-        // ⚡ Verificados = Rápidos
         speed = 1.5 + Math.random() * 1.5; 
       } else {
-        // 🐢 Não Verificados = Lentos (Modo Zen)
-        speed = 0.2 + Math.random() * 0.4;
+        speed = 1.0 + Math.random() * 1.4;
       }
 
       const angle = Math.random() * Math.PI * 2
@@ -660,13 +658,17 @@ function MovingProfile({
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
 
-        if (newX <= 0 || newX >= arenaWidth - imageSize) {
+        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão lateral
+        if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.x *= -1
-          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize))
+          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
         }
-        if (newY <= 0 || newY >= arenaHeight - imageSize) {
+
+        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão inferior/superior
+        // Isso impede que a imagem passe da borda do container
+        if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.y *= -1
-          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize))
+          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
 
         const newPos = { x: newX, y: newY }
