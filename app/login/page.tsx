@@ -1,3 +1,4 @@
+// app/login/page.tsx (VERSÃO ATUALIZADA COM SYNC)
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -5,16 +6,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import '../globals.css'
 
-// Interface estendida para capturar dados completos do Scrape
 interface ProfileSearchResult {
   username: string
   fullName: string
   profilePic: string
   followers: number
-  following: number // Adicionado
-  posts: number     // Adicionado
-  biography: string // Adicionado
-  isPrivate: boolean // Adicionado
+  following: number
+  posts: number
+  biography: string
+  isPrivate: boolean
   isVerified: boolean
 }
 
@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState<ProfileSearchResult | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -48,7 +49,6 @@ export default function LoginPage() {
         
         if (response.ok) {
           const data = await response.json()
-          // ✅ CAPTURA COMPLETA: Mapeando todos os dados da API de Scrape
           const profiles: ProfileSearchResult[] = [{
             username: data.username,
             fullName: data.fullName || data.username,
@@ -98,14 +98,51 @@ export default function LoginPage() {
     setShowResults(false)
   }
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!selectedProfile) {
       alert('Por favor, selecione um perfil do Instagram')
       return
     }
     
-    // ✅ ARMAZENAMENTO COMPLETO: Agora o LocalStorage tem tudo que a API de Grupo precisa
+    setIsSyncing(true)
+    
+    try {
+      console.log('🔄 Sincronizando dados com o banco...')
+      
+      // ✅ NOVO: Sincronizar dados com PostgreSQL
+      const syncResponse = await fetch('/api/usuarios/sincronizar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: selectedProfile.username,
+          fullName: selectedProfile.fullName,
+          profilePic: selectedProfile.profilePic,
+          followers: selectedProfile.followers,
+          following: selectedProfile.following,
+          posts: selectedProfile.posts,
+          biography: selectedProfile.biography,
+          isVerified: selectedProfile.isVerified,
+          isPrivate: selectedProfile.isPrivate,
+          instagramId: selectedProfile.username // Temporário
+        })
+      })
+
+      if (!syncResponse.ok) {
+        console.error('⚠️ Falha na sincronização, mas continuando...')
+        // Não bloquear login se sync falhar
+      } else {
+        console.log('✅ Dados sincronizados com sucesso!')
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar:', error)
+      // Não bloquear login se sync falhar
+    }
+    
+    // Salvar no localStorage (mantém compatibilidade)
     localStorage.setItem('userProfile', JSON.stringify(selectedProfile))
+    
+    setIsSyncing(false)
     
     const redirectUrl = localStorage.getItem('redirectAfterLogin')
     
@@ -244,9 +281,14 @@ export default function LoginPage() {
           <button 
             className={`btn ${selectedProfile ? 'btn-primary' : 'btn-disabled'}`}
             onClick={handleLogin}
-            disabled={!selectedProfile}
+            disabled={!selectedProfile || isSyncing}
           >
-            {selectedProfile ? (
+            {isSyncing ? (
+              <>
+                <span className="btn-icon">🔄</span>
+                <span>Sincronizando dados...</span>
+              </>
+            ) : selectedProfile ? (
               <>
                 <span className="btn-icon">✨</span>
                 <span>Continuar como @{selectedProfile.username}</span>
