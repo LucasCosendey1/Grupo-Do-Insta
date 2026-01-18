@@ -5,11 +5,16 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import '../globals.css'
 
+// Interface estendida para capturar dados completos do Scrape
 interface ProfileSearchResult {
   username: string
   fullName: string
   profilePic: string
   followers: number
+  following: number // Adicionado
+  posts: number     // Adicionado
+  biography: string // Adicionado
+  isPrivate: boolean // Adicionado
   isVerified: boolean
 }
 
@@ -43,11 +48,16 @@ export default function LoginPage() {
         
         if (response.ok) {
           const data = await response.json()
-          const profiles = [{
+          // ✅ CAPTURA COMPLETA: Mapeando todos os dados da API de Scrape
+          const profiles: ProfileSearchResult[] = [{
             username: data.username,
             fullName: data.fullName || data.username,
             profilePic: data.profilePic,
-            followers: data.followers,
+            followers: data.followers || 0,
+            following: data.following || 0,
+            posts: data.posts || 0,
+            biography: data.biography || '',
+            isPrivate: data.isPrivate || false,
             isVerified: data.isVerified || false
           }]
           setSearchResults(profiles)
@@ -94,14 +104,12 @@ export default function LoginPage() {
       return
     }
     
-    // Salvar perfil no localStorage
+    // ✅ ARMAZENAMENTO COMPLETO: Agora o LocalStorage tem tudo que a API de Grupo precisa
     localStorage.setItem('userProfile', JSON.stringify(selectedProfile))
     
-    // ✅ VERIFICAR SE HÁ REDIRECIONAMENTO PENDENTE
     const redirectUrl = localStorage.getItem('redirectAfterLogin')
     
     if (redirectUrl) {
-      console.log('🔄 Redirecionando para:', redirectUrl)
       localStorage.removeItem('redirectAfterLogin')
       router.push(redirectUrl)
     } else {
@@ -200,16 +208,6 @@ export default function LoginPage() {
                 ))}
               </div>
             )}
-
-            {showResults && searchResults.length === 0 && !isSearching && searchTerm.length >= 2 && (
-              <div className="search-results-dropdown">
-                <div className="search-no-results">
-                  <div className="no-results-icon">🔍</div>
-                  <div className="no-results-text">Perfil não encontrado</div>
-                  <div className="no-results-hint">Verifique se o username está correto</div>
-                </div>
-              </div>
-            )}
           </div>
 
           {selectedProfile && (
@@ -261,14 +259,6 @@ export default function LoginPage() {
               </>
             )}
           </button>
-
-          <div className="security-info">
-            <div className="security-icon">🔒</div>
-            <div className="security-text">
-              <strong>Sua privacidade está protegida</strong>
-              <p>Não solicitamos senha. Acessamos apenas dados públicos do Instagram.</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

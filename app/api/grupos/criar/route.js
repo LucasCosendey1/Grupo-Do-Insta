@@ -2,7 +2,8 @@ import { sql } from '@vercel/postgres'
 
 export async function POST(request) {
   try {
-    const { name, icon, creatorUsername } = await request.json()
+    // Agora recebemos o objeto 'creatorData' enviado pelo Frontend
+    const { name, icon, creatorUsername, creatorData } = await request.json()
 
     if (!name || !creatorUsername) {
       return Response.json({ error: 'Nome e criador são obrigatórios' }, { status: 400 })
@@ -10,50 +11,10 @@ export async function POST(request) {
 
     console.log('🚀 Criando grupo:', name, 'por', creatorUsername)
 
-    // Gerar ID único
-    const groupId = `G-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    // Gerar ID único no padrão G-timestamp
+    const groupId = `G-${Date.now()}`
 
-    // ✅ CORREÇÃO: Detectar URL base corretamente no Vercel
-    const getBaseUrl = () => {
-      // Tentar pegar o host real da requisição
-      const host = request.headers.get('host')
-      const protocol = request.headers.get('x-forwarded-proto') || 'http'
-      
-      if (host) {
-        console.log('📍 Usando host da requisição:', host)
-        return `${protocol}://${host}`
-      }
-      
-      // Fallback para variável de ambiente do Vercel
-      if (process.env.VERCEL_URL) {
-        console.log('📍 Usando VERCEL_URL:', process.env.VERCEL_URL)
-        return `https://${process.env.VERCEL_URL}`
-      }
-      
-      // Último fallback para desenvolvimento local
-      console.log('📍 Usando localhost (desenvolvimento)')
-      return 'http://localhost:3000'
-    }
-    
-    const baseUrl = getBaseUrl()
-    console.log('🌐 Base URL final:', baseUrl)
-    
-    // Buscar dados completos do criador
-    console.log('🔍 Buscando dados do criador...')
-    
-    const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${creatorUsername}`)
-    
-    let creatorData = null
-    if (scrapeResponse.ok) {
-      creatorData = await scrapeResponse.json()
-      console.log('✅ Dados do criador obtidos')
-    } else {
-      console.warn('⚠️ Não foi possível buscar dados do criador, usando dados básicos')
-      console.warn('   Status:', scrapeResponse.status)
-      console.warn('   URL tentada:', `${baseUrl}/api/scrape?username=${creatorUsername}`)
-    }
-
-    // Criar grupo
+    // 1. Criar o grupo no banco
     await sql`
       INSERT INTO grupos (id, name, icon_emoji, icon_name, creator_username)
       VALUES (
@@ -65,9 +26,9 @@ export async function POST(request) {
       )
     `
 
-    console.log('✅ Grupo criado no banco')
+    console.log('✅ Grupo criado no banco:', groupId)
 
-    // Adicionar criador como primeiro membro COM DADOS COMPLETOS
+    // 2. Adicionar criador como membro usando os dados que o Frontend "lembrou" do LocalStorage
     await sql`
       INSERT INTO grupo_membros (
         grupo_id, 
@@ -95,7 +56,7 @@ export async function POST(request) {
       )
     `
 
-    console.log('✅ Criador adicionado como membro com dados completos')
+    console.log('✅ Criador adicionado com dados reais enviados pelo cliente')
 
     return Response.json({
       success: true,
