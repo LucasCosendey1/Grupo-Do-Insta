@@ -50,7 +50,10 @@ export default function GrupoPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isUserMember, setIsUserMember] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
-  const [showCopiedMessage, setShowCopiedMessage] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [showShareOptions, setShowShareOptions] = useState(false)
+  const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   // ✅ VERIFICAR SE USUÁRIO ESTÁ LOGADO
   useEffect(() => {
@@ -126,6 +129,18 @@ export default function GrupoPage() {
     }
   }, [userProfile, profiles])
 
+  // Fechar menu ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false)
+        setShowShareOptions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -136,12 +151,62 @@ export default function GrupoPage() {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-  // ✅ COPIAR LINK DE CONVITE
-  const handleCopyInviteLink = () => {
-    const inviteLink = window.location.href
-    navigator.clipboard.writeText(inviteLink)
-    setShowCopiedMessage(true)
-    setTimeout(() => setShowCopiedMessage(false), 3000)
+  // ✅ GERAR LINK PERSONALIZADO
+  const getShareLink = (): string => {
+    if (!groupData) return window.location.href
+    
+    const groupSlug = groupData.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      
+    return `${window.location.origin}/grupo/${groupId}`
+  }
+
+  // ✅ COPIAR LINK SIMPLES
+  const handleCopyLink = () => {
+    const link = getShareLink()
+    navigator.clipboard.writeText(link)
+    setCopiedType('link')
+    setTimeout(() => setCopiedType(null), 3000)
+  }
+
+  // ✅ COPIAR MENSAGEM COMPLETA
+  const handleCopyMessage = () => {
+    if (!groupData) return
+    
+    const link = getShareLink()
+    const message = `🚀 Olá! Entre no meu grupo "${groupData.name}" no Instagram!\n\n${link}\n\n👥 Já somos ${profiles.length} ${profiles.length === 1 ? 'membro' : 'membros'} com ${formatNumber(getTotalFollowers())} seguidores no total!`
+    
+    navigator.clipboard.writeText(message)
+    setCopiedType('message')
+    setTimeout(() => setCopiedType(null), 3000)
+  }
+
+  // ✅ COMPARTILHAR NATIVO
+  const handleNativeShare = async () => {
+    if (!groupData) return
+    
+    const link = getShareLink()
+    const shareData = {
+      title: `Grupo: ${groupData.name}`,
+      text: `🚀 Entre no meu grupo "${groupData.name}" no Instagram!\n\n👥 ${profiles.length} membros • ${formatNumber(getTotalFollowers())} seguidores`,
+      url: link
+    }
+    
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData)
+        setShowShareOptions(false)
+        setShowMenu(false)
+      } catch (error) {
+        console.log('Compartilhamento cancelado')
+      }
+    } else {
+      handleCopyMessage()
+    }
   }
 
   // ✅ PARTICIPAR DO GRUPO
@@ -187,7 +252,6 @@ export default function GrupoPage() {
 
       console.log('✅ Participou do grupo com sucesso')
 
-      // Evita duplicação ao entrar
       setProfiles(prevProfiles => {
         const filtered = prevProfiles.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase())
         return [...filtered, { ...profileData, isCreator: false }]
@@ -204,50 +268,13 @@ export default function GrupoPage() {
     }
   }
 
-  // ✅ REMOVER MEMBRO (só admin pode)
-  const handleRemove = async (usernameToRemove: string) => {
-    if (!userProfile) return
-    
-    const isCreator = groupData?.creator.toLowerCase() === userProfile.username.toLowerCase()
-    
-    if (!isCreator) {
-      alert('Apenas o criador do grupo pode remover membros!')
-      return
-    }
-
-    if (!window.confirm(`Remover @${usernameToRemove} do grupo?`)) {
-      return
-    }
-
-    try {
-      const response = await fetch('/api/grupos/remover-membro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId: groupId,
-          username: usernameToRemove
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Erro ao remover membro')
-      }
-
-      // Remove da lista visualmente
-      setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== usernameToRemove.toLowerCase()))
-      alert('✅ Membro removido com sucesso!')
-      
-    } catch (error) {
-      alert('Erro ao remover membro: ' + error)
-    }
-  }
-
   // ✅ SAIR DO GRUPO
   const handleLeaveGroup = async () => {
     if (!userProfile) return
+    
+    setShowMenu(false)
 
-    if (!window.confirm('Tem certeza que deseja sair do grupo?')) {
+    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupData?.name}"?`)) {
       return
     }
 
@@ -286,7 +313,12 @@ export default function GrupoPage() {
   if (!isLoadingGroup && !userProfile) {
     return (
       <div className="container">
-        <div className="card">
+        <div className="card grupo-card">
+          <Link href="/" className="btn-back-large">
+            <span className="back-arrow-large">←</span>
+            <span>Voltar</span>
+          </Link>
+
           <div className="header">
             <div className="logo">
               {groupData?.icon?.emoji || '⚡'}
@@ -309,15 +341,6 @@ export default function GrupoPage() {
               <span>Fazer Login</span>
             </button>
           </div>
-
-          <div className="info-box">
-            <strong>💡 Como funciona:</strong>
-            <p>
-              1. Faça login com seu @username do Instagram<br/>
-              2. Você será redirecionado de volta para este grupo<br/>
-              3. Poderá ver os membros e decidir se quer participar
-            </p>
-          </div>
         </div>
       </div>
     )
@@ -326,7 +349,7 @@ export default function GrupoPage() {
   if (isLoadingGroup) {
     return (
       <div className="container">
-        <div className="card">
+        <div className="card grupo-card">
           <div className="loading-state">
             <div className="spinner"></div>
             <p>Carregando grupo...</p>
@@ -338,11 +361,79 @@ export default function GrupoPage() {
 
   return (
     <div className="container">
-      <div className="card">
-        <Link href="/" className="btn-back">
-          <span className="back-arrow">←</span>
-          <span>Voltar</span>
-        </Link>
+      <div className="card grupo-card">
+        {/* HEADER COM MENU */}
+        <div className="grupo-header">
+          <Link href="/" className="btn-back-large">
+            <span className="back-arrow-large">←</span>
+            <span>Voltar</span>
+          </Link>
+
+          {isUserMember && (
+            <div className="group-menu-top" ref={menuRef}>
+              <button
+                className="btn-menu-top"
+                onClick={() => setShowMenu(!showMenu)}
+              >
+                ⋮
+              </button>
+              {showMenu && (
+                <div className="dropdown-menu-top">
+                  <button
+                    className="menu-item-top menu-item-share"
+                    onClick={() => {
+                      setShowShareOptions(!showShareOptions)
+                    }}
+                  >
+                    <span className="menu-icon">🔗</span>
+                    <span>Compartilhar</span>
+                    <span className="menu-arrow">{showShareOptions ? '▼' : '▶'}</span>
+                  </button>
+
+                  {showShareOptions && (
+                    <div className="share-submenu">
+                      {navigator.share && (
+                        <button
+                          className="submenu-item"
+                          onClick={handleNativeShare}
+                        >
+                          <span className="submenu-icon">📱</span>
+                          <span>Compartilhar</span>
+                        </button>
+                      )}
+                      
+                      <button
+                        className="submenu-item"
+                        onClick={handleCopyLink}
+                      >
+                        <span className="submenu-icon">🔗</span>
+                        <span>Copiar Link</span>
+                        {copiedType === 'link' && <span className="copied-check">✓</span>}
+                      </button>
+                      
+                      <button
+                        className="submenu-item"
+                        onClick={handleCopyMessage}
+                      >
+                        <span className="submenu-icon">💬</span>
+                        <span>Copiar Mensagem</span>
+                        {copiedType === 'message' && <span className="copied-check">✓</span>}
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    className="menu-item-top menu-item-leave"
+                    onClick={handleLeaveGroup}
+                  >
+                    <span className="menu-icon">🚪</span>
+                    <span>Sair do Grupo</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="header">
           <div className="logo">
@@ -351,113 +442,49 @@ export default function GrupoPage() {
           <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
           <p className="subtitle">
             {isUserMember 
-              ? 'Você faz parte deste grupo' 
-              : 'Compartilhe o link para convidar pessoas'}
+              ? `👥 ${profiles.length} ${profiles.length === 1 ? 'membro' : 'membros'}` 
+              : 'Faça parte deste grupo'}
           </p>
         </div>
 
-        <div className="group-actions">
-          {isUserMember ? (
-            <>
-              <button 
-                className="btn btn-secondary"
-                onClick={handleCopyInviteLink}
-              >
-                <span className="btn-icon">🔗</span>
-                <span>{showCopiedMessage ? 'Link Copiado!' : 'Copiar Link de Convite'}</span>
-              </button>
-
-              <button 
-                className="btn btn-danger"
-                onClick={handleLeaveGroup}
-              >
-                <span className="btn-icon">🚪</span>
-                <span>Sair do Grupo</span>
-              </button>
-            </>
-          ) : userProfile && profiles.length > 0 ? (
-            <>
-              <button 
-                className="btn btn-primary"
-                onClick={handleJoinGroup}
-                disabled={isJoining}
-              >
-                {isJoining ? (
-                  <>
-                    <span className="btn-icon">⏳</span>
-                    <span>Participando...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="btn-icon">✨</span>
-                    <span>Participar do Grupo</span>
-                  </>
-                )}
-              </button>
-            </>
-          ) : (
-            <>
-              <button 
-                className="btn btn-primary"
-                onClick={handleJoinGroup}
-                disabled={isJoining}
-              >
-                {isJoining ? (
-                  <>
-                    <span className="btn-icon">⏳</span>
-                    <span>Participando...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="btn-icon">✨</span>
-                    <span>Participar do Grupo</span>
-                  </>
-                )}
-              </button>
-
-              <div className="info-box">
-                <strong>👋 Bem-vindo!</strong>
-                <p>
-                  Você foi convidado para este grupo.<br/>
-                  Clique em "Participar" para fazer parte e ver todos os membros.
-                </p>
-              </div>
-            </>
-          )}
-        </div>
+        {/* BOTÃO DE PARTICIPAR */}
+        {!isUserMember && userProfile && profiles.length > 0 && (
+          <div className="join-section">
+            <button 
+              className="btn btn-join"
+              onClick={handleJoinGroup}
+              disabled={isJoining}
+            >
+              {isJoining ? (
+                <>
+                  <span className="btn-icon">⏳</span>
+                  <span>Participando...</span>
+                </>
+              ) : (
+                <>
+                  <span className="btn-icon">✨</span>
+                  <span>Participar do Grupo</span>
+                  <span className="btn-arrow">→</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {profiles.length > 0 && userProfile && (
           <div className="profiles-container">
-            <div className="total-stats">
+            <div className="total-stats-mobile">
               <div className="stats-icon">📊</div>
-              <div className="stats-content">
-                <div className="total-label">Alcance Total do Grupo</div>
-                <div className="total-number">
+              <div className="stats-content-mobile">
+                <div className="total-number-mobile">
                   {formatNumber(getTotalFollowers())}
-                  <span className="followers-text">seguidores</span>
                 </div>
-                <div className="total-members">
-                  <span className="member-count">{profiles.length}</span>{' '}
-                  {profiles.length === 1 ? 'membro ativo' : 'membros ativos'}
-                </div>
+                <div className="total-label-mobile">seguidores no total</div>
               </div>
             </div>
 
-            {!isUserMember && (
-              <div className="info-box" style={{ marginBottom: '20px' }}>
-                <strong>👀 Modo Visualização</strong>
-                <p>
-                  Você não é mais membro deste grupo, mas pode continuar visualizando as estatísticas.
-                  {' '}<span style={{ cursor: 'pointer', textDecoration: 'underline', color: 'var(--primary)' }} onClick={handleJoinGroup}>
-                    Clique aqui para participar novamente.
-                  </span>
-                </p>
-              </div>
-            )}
-
             <ProfilesArena 
               profiles={profiles}
-              onRemove={handleRemove}
               onImageError={handleImageError}
               onProfileClick={setSelectedProfile}
               creatorUsername={groupData?.creator || ''}
@@ -479,9 +506,12 @@ export default function GrupoPage() {
   )
 }
 
+// ==========================================
+// COMPONENTES AUXILIARES
+// ==========================================
+
 interface ProfilesArenaProps {
   profiles: Profile[]
-  onRemove: (username: string) => void
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   creatorUsername: string
@@ -491,7 +521,6 @@ interface ProfilesArenaProps {
 
 function ProfilesArena({ 
   profiles, 
-  onRemove, 
   onImageError, 
   onProfileClick,
   creatorUsername,
@@ -507,6 +536,8 @@ function ProfilesArena({
     }))
   }
 
+  const isCreator = creatorUsername.toLowerCase() === currentUsername.toLowerCase()
+
   return (
     <div className="profiles-arena">
       {profiles.map((profile) => {
@@ -516,13 +547,11 @@ function ProfilesArena({
           <MovingProfile 
             key={profile.username}
             profile={profile}
-            onRemove={onRemove}
             onImageError={onImageError}
             onProfileClick={onProfileClick}
             allPositions={positions}
             updatePosition={updatePosition}
             isAdmin={isAdmin}
-            canRemove={isUserMember && (creatorUsername.toLowerCase() === currentUsername.toLowerCase()) && (profile.username.toLowerCase() !== creatorUsername.toLowerCase())}
           />
         )
       })}
@@ -532,24 +561,20 @@ function ProfilesArena({
 
 interface MovingProfileProps {
   profile: Profile
-  onRemove: (username: string) => void
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   allPositions: Record<string, { x: number; y: number }>
   updatePosition: (username: string, position: { x: number; y: number }) => void
   isAdmin: boolean
-  canRemove: boolean
 }
 
 function MovingProfile({ 
   profile, 
-  onRemove, 
   onImageError, 
   onProfileClick, 
   allPositions, 
   updatePosition, 
-  isAdmin,
-  canRemove
+  isAdmin
 }: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
@@ -559,7 +584,6 @@ function MovingProfile({
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
 
-  // ✅ CONSTANTE DE SEGURANÇA PARA AS BORDAS
   const BOUNDARY_PADDING = 10 
 
   const calculateImageSize = (followers: number): number => {
@@ -624,19 +648,20 @@ function MovingProfile({
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
-      // ✅ Inicializa com padding para não nascer colado na borda
       const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
       const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
       
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
 
-      // 🛠️ LÓGICA DE VELOCIDADE
+      // 🛠️ LÓGICA DE VELOCIDADE 🛠️
       let speed;
       if (profile.isVerified) {
+        // ⚡ Verificados = Rápidos
         speed = 1.5 + Math.random() * 1.5; 
       } else {
-        speed = 1.0 + Math.random() * 1.4;
+        // 🐢 Não Verificados = Lentos (Modo Zen)
+        speed = 0.2 + Math.random() * 0.4;
       }
 
       const angle = Math.random() * Math.PI * 2
@@ -658,14 +683,11 @@ function MovingProfile({
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
 
-        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão lateral
         if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.x *= -1
           newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
         }
 
-        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão inferior/superior
-        // Isso impede que a imagem passe da borda do container
         if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.y *= -1
           newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
@@ -757,19 +779,6 @@ function MovingProfile({
       {/* 👑 COROA FIXA SOBRE A FOTO */}
       {isAdmin && (
         <div className="admin-crown">👑</div>
-      )}
-      
-      {canRemove && (
-        <button 
-          className="remove-btn"
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemove(profile.username)
-          }}
-          title="Remover perfil"
-        >
-          ×
-        </button>
       )}
       
       {isHovered && (
