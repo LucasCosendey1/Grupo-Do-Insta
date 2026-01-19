@@ -106,6 +106,9 @@ export default function CriarGrupoPage() {
       return
     }
 
+    // ✅ TypeScript: garantir que userProfile não é null
+    if (!userProfile) return
+
     setIsLoading(true)
 
     try {
