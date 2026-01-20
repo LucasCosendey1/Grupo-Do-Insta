@@ -5,6 +5,10 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import '../../globals.css'
 
+// ==========================================
+// INTERFACES
+// ==========================================
+
 interface Profile {
   username: string
   fullName: string
@@ -43,27 +47,41 @@ export default function GrupoPage() {
   const router = useRouter()
   const params = useParams()
   const groupId = params.id as string
+  
+  // Estados de Dados
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [groupData, setGroupData] = useState<GroupData | null>(null)
-  const [isLoadingGroup, setIsLoadingGroup] = useState(true)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  
+  // Estados de UI/Loading
+  const [isLoadingGroup, setIsLoadingGroup] = useState(true)
   const [isUserMember, setIsUserMember] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+  
+  // Estados do Menu
   const [showMenu, setShowMenu] = useState(false)
   const [showShareOptions, setShowShareOptions] = useState(false)
   const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
+  // ✅ GARANTIR QUE ESTAMOS NO CLIENTE
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
   // ✅ VERIFICAR SE USUÁRIO ESTÁ LOGADO
   useEffect(() => {
-    const savedProfile = localStorage.getItem('userProfile')
-    if (savedProfile) {
-      try {
-        const profile = JSON.parse(savedProfile)
-        setUserProfile(profile)
-      } catch (error) {
-        console.error('Erro ao carregar perfil:', error)
+    if (typeof window !== 'undefined') {
+      const savedProfile = localStorage.getItem('userProfile')
+      if (savedProfile) {
+        try {
+          const profile = JSON.parse(savedProfile)
+          setUserProfile(profile)
+        } catch (error) {
+          console.error('Erro ao carregar perfil:', error)
+        }
       }
     }
   }, [])
@@ -81,16 +99,12 @@ export default function GrupoPage() {
         
         if (!response.ok) {
           const errorData = await response.json()
-          console.error('❌ Erro na resposta:', errorData)
           throw new Error(errorData.error || 'Grupo não encontrado')
         }
         
         const data = await response.json()
-        console.log('📦 Dados recebidos da API:', data)
         
         if (data.success && data.group) {
-          console.log('✅ Grupo encontrado:', data.group.name)
-          
           const profilesFromDB = data.group.profiles || []
           
           setGroupData({
@@ -103,14 +117,12 @@ export default function GrupoPage() {
           })
           
           setProfiles(profilesFromDB)
-          
         } else {
           throw new Error('Resposta inválida da API')
         }
         
       } catch (error) {
         console.error('❌ Erro ao carregar grupo:', error)
-        alert('Erro ao carregar grupo: ' + error)
       } finally {
         setIsLoadingGroup(false)
       }
@@ -119,7 +131,7 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // ✅ VERIFICAR SE USUÁRIO É MEMBRO DO GRUPO
+  // ✅ VERIFICAR SE USUÁRIO É MEMBRO
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
       const isMember = profiles.some(
@@ -129,7 +141,7 @@ export default function GrupoPage() {
     }
   }, [userProfile, profiles])
 
-  // Fechar menu ao clicar fora
+  // ✅ FECHAR MENU AO CLICAR FORA
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -141,6 +153,7 @@ export default function GrupoPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // FORMATADORES
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -151,38 +164,43 @@ export default function GrupoPage() {
     return profiles.reduce((total, profile) => total + profile.followers, 0)
   }
 
-  // ✅ GERAR LINK PERSONALIZADO
+  // ✅ GERAR LINK SEGURO
   const getShareLink = (): string => {
-    if (!groupData) return window.location.href
-    
-    const groupSlug = groupData.name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      
+    if (typeof window === 'undefined' || !groupData) return ''
     return `${window.location.origin}/grupo/${groupId}`
   }
 
-  // ✅ COPIAR LINK SIMPLES
-  const handleCopyLink = () => {
+  // ✅ COPIAR LINK (Fallback interno)
+  const handleCopyLink = async () => {
     const link = getShareLink()
-    navigator.clipboard.writeText(link)
-    setCopiedType('link')
-    setTimeout(() => setCopiedType(null), 3000)
+    if (!link) return
+
+    try {
+      await navigator.clipboard.writeText(link)
+      setCopiedType('link')
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
+      setTimeout(() => setCopiedType(null), 3000)
+    } catch (err) {
+      console.error('Falha ao copiar:', err)
+      alert('Não foi possível copiar o link automaticamente.')
+    }
   }
 
-  // ✅ COPIAR MENSAGEM COMPLETA
-  const handleCopyMessage = () => {
+  // ✅ COPIAR MENSAGEM
+  const handleCopyMessage = async () => {
     if (!groupData) return
     
     const link = getShareLink()
-    const message = `🚀 Olá! Entre no meu grupo "${groupData.name}" no Instagram!\n\n${link}\n\n👥 Já somos ${profiles.length} ${profiles.length === 1 ? 'membro' : 'membros'} com ${formatNumber(getTotalFollowers())} seguidores no total!`
+    const message = `🚀 Olá! Entre no meu grupo "${groupData.name}" com o seu @ do instagram!\n\n${link}\n\n👥 Já somos ${profiles.length} ${profiles.length === 1 ? 'membro' : 'membros'} com ${formatNumber(getTotalFollowers())} seguidores no total!`
     
-    navigator.clipboard.writeText(message)
-    setCopiedType('message')
-    setTimeout(() => setCopiedType(null), 3000)
+    try {
+      await navigator.clipboard.writeText(message)
+      setCopiedType('message')
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
+      setTimeout(() => setCopiedType(null), 3000)
+    } catch (err) {
+      console.error('Falha ao copiar:', err)
+    }
   }
 
   // ✅ COMPARTILHAR NATIVO
@@ -192,24 +210,25 @@ export default function GrupoPage() {
     const link = getShareLink()
     const shareData = {
       title: `Grupo: ${groupData.name}`,
-      text: `🚀 Entre no meu grupo "${groupData.name}" no Instagram!\n\n👥 ${profiles.length} membros • ${formatNumber(getTotalFollowers())} seguidores`,
+      text: `🚀 Entre no meu grupo "${groupData.name}" no Instagram!`,
       url: link
     }
     
-    if (navigator.share) {
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share(shareData)
         setShowShareOptions(false)
         setShowMenu(false)
       } catch (error) {
-        console.log('Compartilhamento cancelado')
+        console.log('Compartilhamento cancelado ou erro:', error)
       }
     } else {
-      handleCopyMessage()
+      handleCopyLink()
+      alert('Link copiado para a área de transferência!')
     }
   }
 
-  // ✅ PARTICIPAR DO GRUPO
+  // ✅ PARTICIPAR
   const handleJoinGroup = async () => {
     if (!userProfile) {
       localStorage.setItem('redirectAfterLogin', window.location.pathname)
@@ -220,8 +239,6 @@ export default function GrupoPage() {
     setIsJoining(true)
 
     try {
-      console.log('🚀 Participando do grupo:', groupId)
-      
       const response = await fetch(`/api/scrape?username=${userProfile.username}`)
       const profileData = await response.json()
       
@@ -247,13 +264,11 @@ export default function GrupoPage() {
           setIsUserMember(true)
           return
         }
-        throw new Error(addResult.error || 'Erro ao participar do grupo')
+        throw new Error(addResult.error || 'Erro ao participar')
       }
 
-      console.log('✅ Participou do grupo com sucesso')
-
-      setProfiles(prevProfiles => {
-        const filtered = prevProfiles.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase())
+      setProfiles(prev => {
+        const filtered = prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase())
         return [...filtered, { ...profileData, isCreator: false }]
       })
       
@@ -261,22 +276,18 @@ export default function GrupoPage() {
       alert('🎉 Bem-vindo ao grupo!')
       
     } catch (err) {
-      console.error('❌ Erro:', err)
-      alert('Erro ao participar do grupo: ' + (err instanceof Error ? err.message : 'Erro desconhecido'))
+      alert('Erro ao participar: ' + (err instanceof Error ? err.message : 'Erro desconhecido'))
     } finally {
       setIsJoining(false)
     }
   }
 
-  // ✅ SAIR DO GRUPO
+  // ✅ SAIR
   const handleLeaveGroup = async () => {
     if (!userProfile) return
-    
     setShowMenu(false)
 
-    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupData?.name}"?`)) {
-      return
-    }
+    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupData?.name}"?`)) return
 
     try {
       const response = await fetch('/api/grupos/sair', {
@@ -310,6 +321,10 @@ export default function GrupoPage() {
     e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
   }
 
+  // --- RENDERS ---
+
+  if (!isMounted) return null
+
   if (!isLoadingGroup && !userProfile) {
     return (
       <div className="container">
@@ -318,15 +333,11 @@ export default function GrupoPage() {
             <span className="back-arrow-large">←</span>
             <span>Voltar</span>
           </Link>
-
           <div className="header">
-            <div className="logo">
-              {groupData?.icon?.emoji || '⚡'}
-            </div>
-            <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
+            <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
+            <h1>{groupData?.name || 'Carregando...'}</h1>
             <p className="subtitle">Você precisa fazer login para acessar este grupo</p>
           </div>
-
           <div className="login-prompt-section">
             <div className="prompt-icon">🔐</div>
             <div className="prompt-text">Faça login para ver os membros e participar</div>
@@ -337,8 +348,7 @@ export default function GrupoPage() {
                 router.push('/login')
               }}
             >
-              <span className="btn-icon">🚀</span>
-              <span>Fazer Login</span>
+              <span className="btn-icon">🚀</span><span>Fazer Login</span>
             </button>
           </div>
         </div>
@@ -362,70 +372,74 @@ export default function GrupoPage() {
   return (
     <div className="container">
       <div className="card grupo-card">
-        {/* HEADER COM MENU */}
-        <div className="grupo-header">
+        
+        {/* === HEADER COM MENU 3 PONTINHOS === */}
+        {/* CORREÇÃO: display flex com justify-content: space-between para separar os botões */}
+        <div 
+          className="grupo-header" 
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}
+        >
           <Link href="/" className="btn-back-large">
-            <span className="back-arrow-large">←</span>
-            <span>Voltar</span>
+            <span className="back-arrow-large">←</span><span>Voltar</span>
           </Link>
 
           {isUserMember && (
-            <div className="group-menu-top" ref={menuRef}>
+            <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
               <button
                 className="btn-menu-top"
-                onClick={() => setShowMenu(!showMenu)}
+                onClick={() => {
+                  setShowMenu(!showMenu)
+                  if(!showMenu) setShowShareOptions(false)
+                }}
               >
                 ⋮
               </button>
+              
               {showMenu && (
-                <div className="dropdown-menu-top">
+                <div 
+                  className="dropdown-menu-top"
+                  // CORREÇÃO: Abre para baixo e alinhado à direita
+                  style={{
+                    top: '100%', 
+                    right: 0,
+                    marginTop: '8px',
+                    zIndex: 50,
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                  }}
+                >
+                  
+                  {/* BOTÃO PRINCIPAL DE COMPARTILHAR */}
                   <button
                     className="menu-item-top menu-item-share"
-                    onClick={() => {
-                      setShowShareOptions(!showShareOptions)
-                    }}
+                    onClick={() => setShowShareOptions(!showShareOptions)}
                   >
                     <span className="menu-icon">🔗</span>
                     <span>Compartilhar</span>
                     <span className="menu-arrow">{showShareOptions ? '▼' : '▶'}</span>
                   </button>
 
+                  {/* SUBMENU DE COMPARTILHAMENTO */}
                   {showShareOptions && (
                     <div className="share-submenu">
-                      {navigator.share && (
-                        <button
-                          className="submenu-item"
-                          onClick={handleNativeShare}
-                        >
-                          <span className="submenu-icon">📱</span>
-                          <span>Compartilhar</span>
+                      
+                      {/* Opção 1: Nativo */}
+                      {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+                        <button className="submenu-item" onClick={handleNativeShare}>
+                          <span>Compartilhar grupo</span>
                         </button>
                       )}
                       
-                      <button
-                        className="submenu-item"
-                        onClick={handleCopyLink}
-                      >
-                        <span className="submenu-icon">🔗</span>
-                        <span>Copiar Link</span>
-                        {copiedType === 'link' && <span className="copied-check">✓</span>}
-                      </button>
-                      
-                      <button
-                        className="submenu-item"
-                        onClick={handleCopyMessage}
-                      >
-                        <span className="submenu-icon">💬</span>
-                        <span>Copiar Mensagem</span>
+                      {/* Opção 2: Copiar Link Completo */}
+                      <button className="submenu-item" onClick={handleCopyMessage}>
+                        <span>
+                           {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
+                        </span>
                         {copiedType === 'message' && <span className="copied-check">✓</span>}
                       </button>
                     </div>
                   )}
 
-                  <button
-                    className="menu-item-top menu-item-leave"
-                    onClick={handleLeaveGroup}
-                  >
+                  <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>
                     <span className="menu-icon">🚪</span>
                     <span>Sair do Grupo</span>
                   </button>
@@ -435,11 +449,10 @@ export default function GrupoPage() {
           )}
         </div>
 
+        {/* INFO GRUPO */}
         <div className="header">
-          <div className="logo">
-            {groupData?.icon?.emoji || '⚡'}
-          </div>
-          <h1>{groupData?.name || 'Grupo do Instagram'}</h1>
+          <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
+          <h1>{groupData?.name}</h1>
           <p className="subtitle">
             {isUserMember 
               ? `👥 ${profiles.length} ${profiles.length === 1 ? 'membro' : 'membros'}` 
@@ -447,8 +460,8 @@ export default function GrupoPage() {
           </p>
         </div>
 
-        {/* BOTÃO DE PARTICIPAR */}
-        {!isUserMember && userProfile && profiles.length > 0 && (
+        {/* BOTÃO PARTICIPAR */}
+        {!isUserMember && userProfile && (
           <div className="join-section">
             <button 
               className="btn btn-join"
@@ -457,20 +470,18 @@ export default function GrupoPage() {
             >
               {isJoining ? (
                 <>
-                  <span className="btn-icon">⏳</span>
-                  <span>Participando...</span>
+                  <span className="btn-icon">⏳</span><span>Participando...</span>
                 </>
               ) : (
                 <>
-                  <span className="btn-icon">✨</span>
-                  <span>Participar do Grupo</span>
-                  <span className="btn-arrow">→</span>
+                  <span className="btn-icon">✨</span><span>Participar do Grupo</span><span className="btn-arrow">→</span>
                 </>
               )}
             </button>
           </div>
         )}
 
+        {/* ARENA E STATS */}
         {profiles.length > 0 && userProfile && (
           <div className="profiles-container">
             <div className="total-stats-mobile">
@@ -494,6 +505,7 @@ export default function GrupoPage() {
           </div>
         )}
 
+        {/* MODAL DE PERFIL */}
         {selectedProfile && (
           <ProfileModal 
             profile={selectedProfile}
@@ -507,7 +519,7 @@ export default function GrupoPage() {
 }
 
 // ==========================================
-// COMPONENTES AUXILIARES
+// COMPONENTES AUXILIARES (Arena, MovingProfile, Modal)
 // ==========================================
 
 interface ProfilesArenaProps {
@@ -530,19 +542,13 @@ function ProfilesArena({
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
 
   const updatePosition = (username: string, position: { x: number; y: number }) => {
-    setPositions(prev => ({
-      ...prev,
-      [username]: position
-    }))
+    setPositions(prev => ({ ...prev, [username]: position }))
   }
-
-  const isCreator = creatorUsername.toLowerCase() === currentUsername.toLowerCase()
 
   return (
     <div className="profiles-arena">
       {profiles.map((profile) => {
         const isAdmin = profile.isCreator || false
-        
         return (
           <MovingProfile 
             key={profile.username}
@@ -589,58 +595,39 @@ function MovingProfile({
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 50
     const MAX_SIZE = 120
-    
     if (followers <= 1000) return MIN_SIZE
     if (followers >= 1000000) return MAX_SIZE
-    
     const logMin = Math.log10(1000)
     const logMax = Math.log10(1000000)
     const logCurrent = Math.log10(followers)
-    
     const percentage = (logCurrent - logMin) / (logMax - logMin)
     return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * percentage
   }
 
   const imageSize = calculateImageSize(profile.followers)
 
-  // Funções de Colisão
-  const checkCollision = (
-    pos1: { x: number; y: number }, 
-    pos2: { x: number; y: number }, 
-    size1: number, 
-    size2: number
-  ): boolean => {
-    const dx = pos1.x - pos2.x
-    const dy = pos1.y - pos2.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    const minDistance = (size1 + size2) / 2
-    return distance < minDistance
+  // Colisão simples
+  const checkCollision = (p1: {x:number, y:number}, p2: {x:number, y:number}, s1: number, s2: number) => {
+    const dx = p1.x - p2.x
+    const dy = p1.y - p2.y
+    const dist = Math.sqrt(dx*dx + dy*dy)
+    return dist < (s1 + s2)/2
   }
 
-  const resolveCollision = (
-    myPos: { x: number; y: number }, 
-    otherPos: { x: number; y: number }, 
-    myVel: { x: number; y: number }
-  ): { x: number; y: number } => {
+  // Resolver Colisão
+  const resolveCollision = (myPos: {x:number, y:number}, otherPos: {x:number, y:number}, myVel: {x:number, y:number}) => {
     const dx = myPos.x - otherPos.x
     const dy = myPos.y - otherPos.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    
-    if (distance === 0) return myVel
-
-    const nx = dx / distance
-    const ny = dy / distance
-    const dotProduct = myVel.x * nx + myVel.y * ny
-    
-    return {
-      x: myVel.x - 2 * dotProduct * nx,
-      y: myVel.y - 2 * dotProduct * ny
-    }
+    const dist = Math.sqrt(dx*dx + dy*dy)
+    if (dist === 0) return myVel
+    const nx = dx / dist
+    const ny = dy / dist
+    const dot = myVel.x * nx + myVel.y * ny
+    return { x: myVel.x - 2 * dot * nx, y: myVel.y - 2 * dot * ny }
   }
 
   useEffect(() => {
     if (!containerRef.current) return
-
     const arena = containerRef.current.parentElement
     if (!arena) return
     
@@ -648,28 +635,14 @@ function MovingProfile({
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
-      const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
-      const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
-      
-      setPosition({ x: initialX, y: initialY })
-      updatePosition(profile.username, { x: initialX, y: initialY })
+      const initX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
+      const initY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - BOUNDARY_PADDING * 2)
+      setPosition({ x: initX, y: initY })
+      updatePosition(profile.username, { x: initX, y: initY })
 
-      // 🛠️ LÓGICA DE VELOCIDADE 🛠️
-      let speed;
-      if (profile.isVerified) {
-        // ⚡ Verificados = Rápidos
-        speed = 1.5 + Math.random() * 1.5; 
-      } else {
-        // 🐢 Não Verificados = Lentos (Modo Zen)
-        speed = 0.2 + Math.random() * 0.4;
-      }
-
+      let speed = profile.isVerified ? (1.5 + Math.random() * 1.5) : (0.2 + Math.random() * 0.4)
       const angle = Math.random() * Math.PI * 2
-      velocityRef.current = {
-        x: Math.cos(angle) * speed,
-        y: Math.sin(angle) * speed
-      }
-      
+      velocityRef.current = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }
       isInitializedRef.current = true
     }
 
@@ -678,128 +651,91 @@ function MovingProfile({
         animationRef.current = requestAnimationFrame(animate)
         return
       }
-
       setPosition(prev => {
-        let newX = prev.x + velocityRef.current.x
-        let newY = prev.y + velocityRef.current.y
+        let nx = prev.x + velocityRef.current.x
+        let ny = prev.y + velocityRef.current.y
 
-        if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
+        if (nx <= 0 || nx >= arenaWidth - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.x *= -1
-          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+          nx = Math.max(0, Math.min(nx, arenaWidth - imageSize - BOUNDARY_PADDING))
         }
-
-        if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
+        if (ny <= 0 || ny >= arenaHeight - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.y *= -1
-          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
+          ny = Math.max(0, Math.min(ny, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
 
-        const newPos = { x: newX, y: newY }
-
-        Object.entries(allPositions).forEach(([username, otherPos]) => {
-          if (username !== profile.username && otherPos) {
-            if (checkCollision(newPos, otherPos, imageSize, imageSize)) {
-              velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
-              
-              const dx = newPos.x - otherPos.x
-              const dy = newPos.y - otherPos.y
-              const distance = Math.sqrt(dx * dx + dy * dy)
-              
-              if (distance > 0) {
-                const pushDistance = (imageSize - distance) / 2
-                newPos.x += (dx / distance) * pushDistance
-                newPos.y += (dy / distance) * pushDistance
+        const newPos = { x: nx, y: ny }
+        // Checar colisões
+        Object.entries(allPositions).forEach(([uname, opos]) => {
+          if (uname !== profile.username && opos) {
+            if (checkCollision(newPos, opos, imageSize, imageSize)) {
+              velocityRef.current = resolveCollision(newPos, opos, velocityRef.current)
+              // Empurrãozinho
+              const dx = newPos.x - opos.x
+              const dy = newPos.y - opos.y
+              const d = Math.sqrt(dx*dx + dy*dy)
+              if (d > 0) {
+                const push = (imageSize - d)/2
+                newPos.x += (dx/d)*push
+                newPos.y += (dy/d)*push
               }
             }
           }
         })
-
         updatePosition(profile.username, newPos)
         return newPos
       })
-
       animationRef.current = requestAnimationFrame(animate)
     }
-
     animationRef.current = requestAnimationFrame(animate)
+    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
+  }, [isHovered, allPositions, profile, imageSize, updatePosition])
 
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-      }
-    }
-  }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
-
+  // Tooltip position logic
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
-
     const arena = containerRef.current.parentElement
     if (!arena) return
-
-    const arenaWidth = arena.offsetWidth
-    const tooltipHeight = 80
-    const tooltipWidth = 150
-
-    let vertical = 'top'
-    let horizontal = 'center'
-
-    if (position.y < tooltipHeight) vertical = 'bottom'
-    if (position.x < tooltipWidth / 2) horizontal = 'left'
-    else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
-
-    setTooltipPosition({ vertical, horizontal })
+    const w = arena.offsetWidth
+    const th = 80, tw = 150
+    let v = 'top', h = 'center'
+    if (position.y < th) v = 'bottom'
+    if (position.x < tw/2) h = 'left'
+    else if (position.x > w - imageSize - tw/2) h = 'right'
+    setTooltipPosition({ vertical: v, horizontal: h })
   }, [isHovered, position, imageSize])
 
-  const formatNumber = (num: number): string => {
+  const getTooltipClass = () => {
+    const c = ['profile-info']
+    if (tooltipPosition.vertical === 'bottom') c.push('profile-info-bottom')
+    if (tooltipPosition.horizontal === 'left') c.push('profile-info-left')
+    else if (tooltipPosition.horizontal === 'right') c.push('profile-info-right')
+    return c.join(' ')
+  }
+
+  const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
-  }
-
-  const getTooltipClass = (): string => {
-    const classes = ['profile-info']
-    if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
-    if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
-    else if (tooltipPosition.horizontal === 'right') classes.push('profile-info-right')
-    return classes.join(' ')
   }
 
   return (
     <div 
       ref={containerRef}
       className="profile-pic-container"
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        width: `${imageSize}px`,
-        height: `${imageSize}px`,
-      }}
+      style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${imageSize}px`, height: `${imageSize}px` }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* 👑 COROA FIXA SOBRE A FOTO */}
-      {isAdmin && (
-        <div className="admin-crown">👑</div>
-      )}
+      {isAdmin && <div className="admin-crown">👑</div>}
       
       {isHovered && (
         <div className={getTooltipClass()}>
           <div className="profile-username">
             @{profile.username}
-            {/* 👑 TEXTO ADM DOURADO */}
-            {isAdmin && (
-              <span style={{ 
-                color: '#FFD700', 
-                fontWeight: 'bold', 
-                marginLeft: '6px',
-                textShadow: '0 0 5px rgba(255, 215, 0, 0.5)'
-              }}>
-                ADM
-              </span>
-            )}
+            {isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '6px', textShadow: '0 0 5px rgba(255,215,0,0.5)'}}>ADM</span>}
           </div>
-          <div className="profile-followers">
-            {formatNumber(profile.followers)} seguidores
-          </div>
+          <div className="profile-followers">{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
       
@@ -808,10 +744,7 @@ function MovingProfile({
         alt={profile.username}
         className="profile-pic"
         onError={(e) => onImageError(e, profile.username)}
-        onClick={(e) => {
-          e.stopPropagation()
-          onProfileClick(profile)
-        }}
+        onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }}
         loading="lazy"
       />
     </div>
@@ -825,29 +758,22 @@ interface ProfileModalProps {
 }
 
 function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
-  const formatNumber = (num: number): string => {
+  const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose()
-  }
-
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
+    const handleEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-content">
         <button className="modal-close" onClick={onClose}>×</button>
-
         <div className="modal-header-compact">
           <img 
             src={profile.profilePic}
@@ -857,44 +783,21 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
           />
           <div className="modal-user-info">
             <div className="modal-username">
-              @{profile.username}
-              {/* Opcional: Mostrar badge no modal também */}
-              {profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
+              @{profile.username} {profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
             </div>
             <div className="modal-fullname">{profile.fullName || profile.username}</div>
           </div>
         </div>
-
         <div className="modal-stats">
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.posts || 0)}</div>
-            <div className="stat-label">Posts</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.followers || 0)}</div>
-            <div className="stat-label">Seguidores</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.following || 0)}</div>
-            <div className="stat-label">Seguindo</div>
-          </div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.posts || 0)}</div><div className="stat-label">Posts</div></div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.followers || 0)}</div><div className="stat-label">Seguidores</div></div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.following || 0)}</div><div className="stat-label">Seguindo</div></div>
         </div>
-
         <div className="modal-bio-section">
           <div className="modal-bio-label">Biografia</div>
-          {profile.biography ? (
-            <div className="modal-bio-text">{profile.biography}</div>
-          ) : (
-            <div className="modal-bio-empty">Nenhuma biografia disponível</div>
-          )}
+          {profile.biography ? <div className="modal-bio-text">{profile.biography}</div> : <div className="modal-bio-empty">Nenhuma biografia disponível</div>}
         </div>
-
-        <a 
-          href={`https://www.instagram.com/${profile.username}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="modal-link-btn"
-        >
+        <a href={`https://www.instagram.com/${profile.username}`} target="_blank" rel="noopener noreferrer" className="modal-link-btn">
           📸 Ver no Instagram
         </a>
       </div>

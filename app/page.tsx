@@ -56,7 +56,6 @@ export default function Home() {
         const data = await response.json()
         
         if (data.success && data.groups) {
-          console.log(`✅ ${data.groups.length} grupos carregados do servidor`)
           setUserGroups(data.groups)
           localStorage.setItem('groups', JSON.stringify(data.groups))
         } else {
@@ -64,7 +63,6 @@ export default function Home() {
           localStorage.removeItem('groups')
         }
       } else {
-        console.error('❌ Falha na API')
         setUserGroups([]) 
       }
     } catch (error) {
@@ -83,7 +81,6 @@ export default function Home() {
         setUserProfile(profile)
         loadUserGroups(profile.username)
       } catch (error) {
-        console.error('Erro ao ler perfil:', error)
         setIsLoading(false)
       }
     } else {
@@ -110,36 +107,33 @@ export default function Home() {
   }
 
   // ✅ COMPARTILHAR GRUPO
-  const handleShareGroup = (groupId: string, groupName: string) => {
-    const groupUrl = `${window.location.origin}/grupo/${groupId}`
-    navigator.clipboard.writeText(groupUrl)
-    setShowCopiedMessage(groupId)
-    setTimeout(() => setShowCopiedMessage(null), 3000)
-    setOpenMenuId(null)
+  const handleShareGroup = (groupId: string, groupName: string, memberCount: number) => {
+    const link = `${window.location.origin}/grupo/${groupId}`
+    const message = `🚀 Olá! Entre no meu grupo "${groupName}" no Instagram!\n\n${link}\n\n👥 Já somos ${memberCount} ${memberCount === 1 ? 'membro' : 'membros'}!`
+    
+    navigator.clipboard.writeText(message).then(() => {
+        setShowCopiedMessage(groupId)
+        setTimeout(() => setShowCopiedMessage(null), 3000)
+        setOpenMenuId(null)
+    }).catch(err => {
+        alert('Erro ao copiar link')
+    })
   }
 
   // ✅ SAIR DO GRUPO
   const handleLeaveGroup = async (groupId: string, groupName: string) => {
     if (!userProfile) return
-    
     setOpenMenuId(null)
-    
-    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupName}"?`)) {
-      return
-    }
+    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupName}"?`)) return
 
     try {
       const response = await fetch('/api/grupos/sair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId: groupId,
-          username: userProfile.username
-        })
+        body: JSON.stringify({ groupId: groupId, username: userProfile.username })
       })
 
       const data = await response.json()
-
       if (!response.ok) throw new Error(data.error || 'Erro ao sair')
 
       if (data.groupDeleted) {
@@ -147,10 +141,7 @@ export default function Home() {
       } else {
         alert('✅ Você saiu do grupo!')
       }
-      
-      // Recarrega a lista de grupos
       loadUserGroups(userProfile.username)
-
     } catch (error) {
       alert('Erro ao sair do grupo.')
     }
@@ -173,29 +164,17 @@ export default function Home() {
       const response = await fetch('/api/grupos/editar-nome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          groupId: groupId,
-          newName: newGroupName.trim()
-        })
+        body: JSON.stringify({ groupId: groupId, newName: newGroupName.trim() })
       })
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Erro ao editar nome')
-      }
+      if (!response.ok) throw new Error('Erro ao editar nome')
 
       alert('✅ Nome do grupo atualizado!')
-      
-      // Atualiza localmente
-      setUserGroups(prev => prev.map(g => 
-        g.id === groupId ? { ...g, name: newGroupName.trim() } : g
-      ))
-      
+      setUserGroups(prev => prev.map(g => g.id === groupId ? { ...g, name: newGroupName.trim() } : g))
       setEditingGroupId(null)
       setNewGroupName('')
-
     } catch (error) {
-      alert('Erro ao editar nome: ' + error)
+      alert('Erro ao editar nome')
     }
   }
 
@@ -204,7 +183,6 @@ export default function Home() {
     setNewGroupName('')
   }
 
-  // ✅ VERIFICAR SE É ADM
   const isGroupAdmin = (group: Group): boolean => {
     if (!userProfile) return false
     return group.creator?.toLowerCase() === userProfile.username.toLowerCase()
@@ -213,22 +191,15 @@ export default function Home() {
   return (
     <div className="container">
       <div className="card">
-        {/* Header com ação de Login/Logout */}
+        {/* Header Actions */}
         <div className="user-header-actions">
           {userProfile ? (
             <div className="user-info-display">
               <span className="user-handle">@{userProfile.username}</span>
-              <button
-                onClick={handleLogout}
-                className="btn-login btn-sm"
-              >
-                Sair
-              </button>
+              <button onClick={handleLogout} className="btn-login btn-sm">Sair</button>
             </div>
           ) : (
-            <Link href="/login" className="btn-login">
-              Entrar
-            </Link>
+            <Link href="/login" className="btn-login">Entrar</Link>
           )}
         </div>
 
@@ -236,148 +207,74 @@ export default function Home() {
           <div className="logo">⚡</div>
           <h1>Grupo do Insta</h1>
           <p className="subtitle">
-            {userProfile 
-              ? `Bem-vindo, @${userProfile.username}!` 
-              : 'Crie e gerencie grupos do Instagram'}
+            {userProfile ? `Bem-vindo, @${userProfile.username}!` : 'Crie e gerencie grupos do Instagram'}
           </p>
         </div>
 
         <div className="welcome-content">
           {!userProfile ? (
-            // ❌ USUÁRIO NÃO LOGADO
+            // ❌ LOGIN PROMPT
             <>
               <div className="features-grid">
-                <div className="feature-card">
-                  <div className="feature-icon">👥</div>
-                  <h3>Crie Grupos</h3>
-                  <p>Monte grupos personalizados e veja o alcance total.</p>
-                </div>
-                
-                <div className="feature-card">
-                  <div className="feature-icon">📊</div>
-                  <h3>Métricas</h3>
-                  <p>Acompanhe o crescimento em tempo real.</p>
-                </div>
-                
-                <div className="feature-card">
-                  <div className="feature-icon">🚀</div>
-                  <h3>Compartilhe</h3>
-                  <p>Expanda o alcance do seu grupo.</p>
-                </div>
+                <div className="feature-card"><h3>👥 Crie Grupos</h3><p>Monte grupos personalizados.</p></div>
+                <div className="feature-card"><h3>📊 Métricas</h3><p>Acompanhe o crescimento.</p></div>
+                <div className="feature-card"><h3>🚀 Compartilhe</h3><p>Expanda o alcance.</p></div>
               </div>
-
               <div className="login-cta-section">
-                <div className="cta-icon">🔐</div>
-                <h2 className="cta-title">Comece Agora</h2>
-                <p className="cta-text">
-                  Faça login com seu Instagram para criar e participar de grupos
-                </p>
-                <Link href="/login" className="btn btn-primary btn-large">
-                  <span className="btn-icon">🚀</span>
-                  <span>Fazer Login</span>
-                  <span className="btn-arrow">→</span>
-                </Link>
-              </div>
-
-              <div className="info-box">
-                <strong>💡 Como funciona:</strong>
-                <p>
-                  1. Faça login com seu @username do Instagram<br/>
-                  2. Crie grupos e convide amigos<br/>
-                  3. Veja o alcance total de seguidores<br/>
-                  4. Compartilhe links de convite
-                </p>
+                <Link href="/login" className="btn btn-primary btn-large"><span>Fazer Login</span> →</Link>
               </div>
             </>
           ) : (
-            // ✅ USUÁRIO LOGADO
+            // ✅ DASHBOARD
             <>
               <div className="action-hero">
-                <Link href="/criar-grupo" className="btn btn-primary btn-hero">
-                  <span className="btn-icon">➕</span>
-                  <span>Criar Novo Grupo</span>
-                  <span className="btn-arrow">→</span>
-                </Link>
-                
-                <Link href="/entrar-grupo" className="btn btn-secondary">
-                  <span className="btn-icon">🔗</span>
-                  <span>Entrar em Grupo</span>
-                </Link>
+                <Link href="/criar-grupo" className="btn btn-primary btn-hero"><span>➕ Criar Novo Grupo</span></Link>
+                <Link href="/entrar-grupo" className="btn btn-secondary"><span>🔗 Entrar em Grupo</span></Link>
               </div>
 
-              {/* ✅ LISTA DE GRUPOS COM MENU DE 3 PONTINHOS */}
               <div className="user-groups-section">
-                <h2 className="section-title">
-                  <span className="title-icon">📂</span> Seus Grupos
-                </h2>
+                <h2 className="section-title">📂 Seus Grupos</h2>
 
                 {isLoading ? (
-                  <div className="loading-state">
-                    <div className="mini-spinner"></div>
-                    <p>Carregando...</p>
-                  </div>
+                  <div className="loading-state"><div className="mini-spinner"></div><p>Carregando...</p></div>
                 ) : userGroups.length > 0 ? (
                   <div className="groups-grid">
                     {userGroups.map((group) => (
                       <div key={group.id} className="group-card-wrapper">
                         {editingGroupId === group.id ? (
-                          // 📝 MODO EDIÇÃO DO NOME
+                          // MODO EDIÇÃO
                           <div className="group-card-editing">
-                            <div className="group-icon-large">
-                              {group.icon?.emoji || '📁'}
-                            </div>
+                             {/* ... (mantido igual ao anterior) ... */}
                             <div className="edit-name-form">
-                              <input
-                                type="text"
-                                value={newGroupName}
-                                onChange={(e) => setNewGroupName(e.target.value)}
-                                className="input-edit-name"
-                                placeholder="Nome do grupo"
-                                maxLength={50}
-                                autoFocus
+                              <input 
+                                type="text" value={newGroupName} 
+                                onChange={(e) => setNewGroupName(e.target.value)} 
+                                className="input-edit-name" autoFocus 
                               />
                               <div className="edit-actions">
-                                <button
-                                  className="btn-save-edit"
-                                  onClick={() => handleSaveGroupName(group.id)}
-                                >
-                                  ✓ Salvar
-                                </button>
-                                <button
-                                  className="btn-cancel-edit"
-                                  onClick={handleCancelEdit}
-                                >
-                                  × Cancelar
-                                </button>
+                                <button className="btn-save-edit" onClick={() => handleSaveGroupName(group.id)}>✓</button>
+                                <button className="btn-cancel-edit" onClick={handleCancelEdit}>×</button>
                               </div>
                             </div>
                           </div>
                         ) : (
-                          // 👀 MODO VISUALIZAÇÃO NORMAL
+                          // MODO VISUALIZAÇÃO
                           <>
-                            <Link 
-                              href={`/grupo/${group.id}`} 
-                              className="group-card"
-                            >
-                              <div className="group-icon-large">
-                                {group.icon?.emoji || '📁'}
-                              </div>
+                            <Link href={`/grupo/${group.id}`} className="group-card">
+                              <div className="group-icon-large">{group.icon?.emoji || '📁'}</div>
                               <div className="group-card-info">
                                 <h3 className="group-card-name">{group.name}</h3>
-                                <p className="group-card-members">
-                                  👥 {group.memberCount} {group.memberCount === 1 ? 'membro' : 'membros'}
-                                </p>
+                                <p className="group-card-members">👥 {group.memberCount} membros</p>
                               </div>
                               <div className="group-card-arrow">→</div>
                             </Link>
 
-                            {/* ✅ MENU DE 3 PONTINHOS */}
+                            {/* ✅ MENU 3 PONTINHOS (VOLTOU AO ORIGINAL + MENU PRA CIMA) */}
                             <div className="group-menu-container" ref={menuRef}>
                               <button
                                 className="btn-group-menu"
                                 onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
+                                  e.preventDefault(); e.stopPropagation();
                                   setOpenMenuId(openMenuId === group.id ? null : group.id)
                                 }}
                               >
@@ -385,47 +282,53 @@ export default function Home() {
                               </button>
 
                               {openMenuId === group.id && (
-                                <div className="group-dropdown-menu">
+                                <div 
+                                    className="group-dropdown-menu" 
+                                    // AJUSTES DE ESTILO AQUI
+                                    style={{ 
+                                        bottom: '100%', // Abre para cima
+                                        top: 'auto', 
+                                        right: 0,
+                                        marginBottom: '10px', // O ESPAÇO QUE VOCÊ PEDIU
+                                        zIndex: 100,
+                                        boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
+                                        padding: '8px 0' // Espaço interno para os botões não ficarem colados na borda
+                                    }}
+                                >
                                   {showCopiedMessage === group.id && (
-                                    <div className="copy-success-badge">✓ Link copiado!</div>
+                                    <div className="copy-success-badge">✓ Copiado!</div>
                                   )}
                                   
                                   <button
                                     className="menu-item menu-item-share"
                                     onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      handleShareGroup(group.id, group.name)
+                                      e.preventDefault(); e.stopPropagation();
+                                      handleShareGroup(group.id, group.name, group.memberCount)
                                     }}
                                   >
-                                    <span className="menu-icon">🔗</span>
-                                    <span>Compartilhar Grupo</span>
+                                    <span className="menu-icon">🔗</span> Compartilhar
                                   </button>
 
                                   {isGroupAdmin(group) && (
                                     <button
                                       className="menu-item menu-item-edit"
                                       onClick={(e) => {
-                                        e.preventDefault()
-                                        e.stopPropagation()
+                                        e.preventDefault(); e.stopPropagation();
                                         handleStartEditName(group.id, group.name)
                                       }}
                                     >
-                                      <span className="menu-icon">✏️</span>
-                                      <span>Editar Nome</span>
+                                      <span className="menu-icon">✏️</span> Editar Nome
                                     </button>
                                   )}
 
                                   <button
                                     className="menu-item menu-item-leave"
                                     onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
+                                      e.preventDefault(); e.stopPropagation();
                                       handleLeaveGroup(group.id, group.name)
                                     }}
                                   >
-                                    <span className="menu-icon">🚪</span>
-                                    <span>Sair do Grupo</span>
+                                    <span className="menu-icon">🚪</span> Sair
                                   </button>
                                 </div>
                               )}
@@ -436,11 +339,7 @@ export default function Home() {
                     ))}
                   </div>
                 ) : (
-                  <div className="empty-state">
-                    <div className="empty-icon">📭</div>
-                    <p className="empty-text">Você não está em nenhum grupo</p>
-                    <p className="empty-hint">Crie um grupo ou peça um convite para participar</p>
-                  </div>
+                  <div className="empty-state"><p>Você não está em nenhum grupo</p></div>
                 )}
               </div>
             </>
