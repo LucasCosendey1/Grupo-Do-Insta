@@ -49,8 +49,27 @@ export default function EntrarGrupoPage() {
         
         if (data.success && data.group) {
           console.log('✅ Grupo encontrado:', data.group.name)
-          // Redireciona para a página do grupo
-          router.push(`/grupo/${groupId}`)
+          
+          // === LÓGICA NOVA AQUI ===
+          const savedProfile = localStorage.getItem('userProfile')
+          
+          if (savedProfile) {
+             // Se já está logado, vai direto pro grupo
+             router.push(`/grupo/${groupId}`)
+          } else {
+             // Se NÃO está logado, vai pro Login mas com visual personalizado
+             localStorage.setItem('redirectAfterLogin', `/grupo/${groupId}`)
+             
+             // Cria parametros para a tela de login saber que é um convite
+             const params = new URLSearchParams({
+                context: 'join',
+                gName: data.group.name,
+                gEmoji: data.group.icon.emoji
+             })
+             
+             router.push(`/login?${params.toString()}`)
+          }
+          
         } else {
           setError('Grupo não encontrado')
         }
@@ -69,28 +88,17 @@ export default function EntrarGrupoPage() {
   }
 
   // ✅ FUNÇÃO BLINDADA PARA EXTRAIR ID
-  // Funciona com localhost, vercel, instadogrupo.com.br ou texto misturado
   const extractGroupId = (input: string): string | null => {
-    // 1. Procura EXATAMENTE pelo padrão do seu ID: "G-" seguido de números, traço e letras
-    // Exemplo: G-1768691410292-cxvd8u
     const idPattern = /(G-\d+-[a-zA-Z0-9]+)/i
-    
     const match = input.match(idPattern)
-    
-    if (match) {
-      // Retorna o ID limpo, ignorando qualquer domínio ou lixo ao redor
-      return match[1] 
-    }
+    if (match) return match[1] 
 
-    // 2. Fallback simples (caso o ID seja curto ou antigo apenas "G-123")
     if (input.includes('/grupo/')) {
       const parts = input.split('/grupo/')
-      // Pega a parte depois de /grupo/ e limpa query params (?...)
       const potentialId = parts[1]?.split('?')[0]?.split('#')[0]
       if (potentialId && potentialId.startsWith('G-')) return potentialId
     }
 
-    // 3. Se o usuário digitou apenas o código
     if (input.trim().startsWith('G-')) {
       return input.trim()
     }
@@ -100,7 +108,6 @@ export default function EntrarGrupoPage() {
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pastedText = e.clipboardData.getData('text')
-    // Se o texto colado tiver um ID válido, já limpamos o erro
     if (pastedText.includes('G-')) {
       setGroupInput(pastedText)
       setError('')

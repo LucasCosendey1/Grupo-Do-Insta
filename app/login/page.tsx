@@ -1,8 +1,8 @@
-// app/login/page.tsx (VERSÃO ATUALIZADA COM SYNC)
+// app/login/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import '../globals.css'
 
@@ -18,8 +18,16 @@ interface ProfileSearchResult {
   isVerified: boolean
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // ✅ 1. Identificar se é fluxo de convite
+  const context = searchParams.get('context')
+  const groupName = searchParams.get('gName')
+  const groupEmoji = searchParams.get('gEmoji')
+  const isJoinFlow = context === 'join' && groupName
+
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ProfileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -29,6 +37,7 @@ export default function LoginPage() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // --- LÓGICA DE BUSCA (Mantida igual) ---
   useEffect(() => {
     if (searchTerm.length < 2) {
       setSearchResults([])
@@ -109,7 +118,6 @@ export default function LoginPage() {
     try {
       console.log('🔄 Sincronizando dados com o banco...')
       
-      // ✅ NOVO: Sincronizar dados com PostgreSQL
       const syncResponse = await fetch('/api/usuarios/sincronizar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -123,27 +131,26 @@ export default function LoginPage() {
           biography: selectedProfile.biography,
           isVerified: selectedProfile.isVerified,
           isPrivate: selectedProfile.isPrivate,
-          instagramId: selectedProfile.username // Temporário
+          instagramId: selectedProfile.username
         })
       })
 
       if (!syncResponse.ok) {
         console.error('⚠️ Falha na sincronização, mas continuando...')
-        // Não bloquear login se sync falhar
       } else {
         console.log('✅ Dados sincronizados com sucesso!')
       }
       
     } catch (error) {
       console.error('❌ Erro ao sincronizar:', error)
-      // Não bloquear login se sync falhar
     }
     
-    // Salvar no localStorage (mantém compatibilidade)
+    // Salvar no localStorage
     localStorage.setItem('userProfile', JSON.stringify(selectedProfile))
     
     setIsSyncing(false)
     
+    // ✅ REDIRECIONAMENTO INTELIGENTE
     const redirectUrl = localStorage.getItem('redirectAfterLogin')
     
     if (redirectUrl) {
@@ -172,19 +179,38 @@ export default function LoginPage() {
           <span>Voltar</span>
         </Link>
 
+        {/* ✅ 2. HEADER CONDICIONAL */}
         <div className="header">
-          <div className="logo login-logo">
-            <div className="logo-inner">🔐</div>
-          </div>
-          <h1>Entrar no Insta Grupos</h1>
-          <p className="subtitle">Conecte-se com seu perfil do Instagram</p>
+          {isJoinFlow ? (
+             // Visual de Convite
+             <>
+               <div className="logo create-logo" style={{ marginBottom: '15px' }}>
+                 <div className="logo-inner" style={{ fontSize: '2.5rem' }}>
+                   {groupEmoji || '👥'}
+                 </div>
+               </div>
+               <h1 style={{ fontSize: '1.6rem' }}>Entrar em "{groupName}"</h1>
+               <p className="subtitle" style={{ color: '#fff', opacity: 0.9, marginTop: '8px' }}>
+                 Informe o seu @ do Instagram para entrar no grupo
+               </p>
+             </>
+          ) : (
+             // Visual Padrão
+             <>
+               <div className="logo login-logo">
+                 <div className="logo-inner">🔐</div>
+               </div>
+               <h1>Entrar no Insta Grupos</h1>
+               <p className="subtitle">Conecte-se com seu perfil do Instagram</p>
+             </>
+          )}
         </div>
 
         <div className="login-content">
           <div className="input-group" ref={inputRef}>
             <label htmlFor="instagram-search">
               <span className="label-icon">@</span>
-              Buscar seu perfil
+              {isJoinFlow ? 'Seu usuário do Insta' : 'Buscar seu perfil'}
             </label>
             <div className="input-wrapper">
               <input
@@ -278,6 +304,7 @@ export default function LoginPage() {
             </div>
           )}
 
+          {/* ✅ 3. BOTÃO CONDICIONAL */}
           <button 
             className={`btn ${selectedProfile ? 'btn-primary' : 'btn-disabled'}`}
             onClick={handleLogin}
@@ -286,23 +313,47 @@ export default function LoginPage() {
             {isSyncing ? (
               <>
                 <span className="btn-icon">🔄</span>
-                <span>Sincronizando dados...</span>
+                <span>Sincronizando...</span>
               </>
             ) : selectedProfile ? (
               <>
                 <span className="btn-icon">✨</span>
-                <span>Continuar como @{selectedProfile.username}</span>
+                {/* Texto do botão muda se for fluxo de convite */}
+                <span>
+                   {isJoinFlow 
+                      ? `Entrar no Grupo como @${selectedProfile.username}`
+                      : `Continuar como @${selectedProfile.username}`
+                   }
+                </span>
                 <span className="btn-arrow">→</span>
               </>
             ) : (
               <>
                 <span className="btn-icon">🔍</span>
-                <span>Busque seu perfil acima para continuar</span>
+                <span>Busque seu perfil acima</span>
               </>
             )}
           </button>
         </div>
       </div>
     </div>
+  )
+}
+
+// ✅ Wrapper com Suspense (Obrigatório para useSearchParams no Next.js)
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+        <div className="container">
+            <div className="card login-card">
+                <div className="loading-state">
+                    <div className="spinner"></div>
+                    <p>Carregando...</p>
+                </div>
+            </div>
+        </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }

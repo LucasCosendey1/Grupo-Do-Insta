@@ -221,7 +221,7 @@ export default function Home() {
                 <div className="feature-card"><h3>🚀 Compartilhe</h3><p>Expanda o alcance.</p></div>
               </div>
               <div className="login-cta-section">
-                <Link href="/login" className="btn btn-primary btn-large"><span>Fazer Login</span> →</Link>
+                <Link href="/login" className="btn btn-primary btn-large"><span>Entre com o seu @ do instagram</span> →</Link>
               </div>
             </>
           ) : (
