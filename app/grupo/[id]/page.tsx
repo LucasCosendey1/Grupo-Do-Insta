@@ -136,7 +136,6 @@ export default function GrupoPage() {
         
         if (response.ok) {
           const data = await response.json()
-          // A API retorna um objeto, transformamos em array para lista
           setSearchResults([data]) 
         } else {
           setSearchResults([])
@@ -157,7 +156,6 @@ export default function GrupoPage() {
   // AÇÕES
   // ==========================================
 
-  // AÇÃO: Logar e Entrar no Grupo ao mesmo tempo
   const handleLoginAndJoin = async (profileData: any) => {
     const userToSave = {
         username: profileData.username,
@@ -201,7 +199,7 @@ export default function GrupoPage() {
             return [...prev, { ...profileData, isCreator: false }]
         })
         setIsUserMember(true)
-        alert(`Bem-vindo(a), @${profileData.username}!`)
+
 
     } catch (err) {
         alert('Login salvo, mas houve um erro ao entrar no grupo. Tente clicar em "Participar".')
@@ -210,7 +208,6 @@ export default function GrupoPage() {
     }
   }
 
-  // Ação para quem JÁ estava logado mas não era membro
   const handleJoinOnly = async () => {
     if (!userProfile) return
     setIsJoining(true)
@@ -224,7 +221,6 @@ export default function GrupoPage() {
     }
   }
 
-  // Sair do Grupo
   const handleLeaveGroup = async () => {
     if (!userProfile || !window.confirm('Sair do grupo?')) return
     setShowMenu(false)
@@ -237,25 +233,7 @@ export default function GrupoPage() {
     setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase()))
   }
 
-  // Compartilhar
-  const handleCopyMessage = () => {
-    const link = `${window.location.origin}/grupo/${groupId}`
-    const msg = `🚀 Entre no grupo "${groupData?.name}"!\n${link}`
-    navigator.clipboard.writeText(msg)
-    setCopiedType('message')
-    setTimeout(() => setCopiedType(null), 2000)
-  }
-
-  const handleNativeShare = async () => {
-    if (typeof navigator.share === 'function' && groupData) {
-        navigator.share({ title: groupData.name, url: `${window.location.origin}/grupo/${groupId}` })
-    }
-  }
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
-  }
-  
+  // ✅ Lógica de formatação do número (Movida para cima para ser usada no share)
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -263,6 +241,42 @@ export default function GrupoPage() {
   }
 
   const getTotalFollowers = () => profiles.reduce((total, p) => total + p.followers, 0)
+
+  // ✅ NOVA LÓGICA DE COPIAR MENSAGEM
+  const handleCopyMessage = () => {
+    const link = `${window.location.origin}/grupo/${groupId}`
+    const groupName = groupData?.name || 'Grupo'
+    const membersCount = profiles.length
+    const followersCount = formatNumber(getTotalFollowers())
+
+    const msg = `✨ Convite Especial!\n\nVenha fazer parte do "${groupName}" 🚀\n\n👥 ${membersCount} Membros\n📊 ${followersCount} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
+    
+    navigator.clipboard.writeText(msg)
+    setCopiedType('message')
+    setTimeout(() => setCopiedType(null), 2000)
+  }
+
+  // ✅ NOVA LÓGICA DE COMPARTILHAMENTO NATIVO (Mobile)
+  const handleNativeShare = async () => {
+    if (typeof navigator.share === 'function' && groupData) {
+        const link = `${window.location.origin}/grupo/${groupId}`
+        const followersCount = formatNumber(getTotalFollowers())
+        
+        const msg = `Venha fazer parte do grupo"${groupData.name}"! Já somos ${profiles.length} membros com ${followersCount} seguidores.`
+
+        navigator.share({ 
+            title: `Convite: ${groupData.name}`, 
+            text: msg,
+            url: link 
+        })
+    } else {
+        handleCopyMessage()
+    }
+  }
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
+    e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
+  }
 
   // --- RENDERS ---
 
@@ -276,7 +290,7 @@ export default function GrupoPage() {
     <div className="container">
       <div className="card grupo-card">
         
-        {/* HEADER */}
+        {/* HEADER TOP */}
         <div className="grupo-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           <Link href="/" className="btn-back-large">
             <span className="back-arrow-large">←</span><span>Voltar</span>
@@ -288,16 +302,16 @@ export default function GrupoPage() {
               {showMenu && (
                 <div className="dropdown-menu-top" style={{ top: '100%', right: 0, marginTop: '8px', zIndex: 50 }}>
                   <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>
-                    🔗 Compartilhar {showShareOptions ? '▼' : '▶'}
+                    Compartilhar {showShareOptions ? '▼' : '▶'}
                   </button>
                   {showShareOptions && (
                     <div className="share-submenu">
-                       {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-                         <button className="submenu-item" onClick={handleNativeShare}>Compartilhar</button>
-                       )}
-                       <button className="submenu-item" onClick={handleCopyMessage}>
-                         {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
-                       </button>
+                        {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+                          <button className="submenu-item" onClick={handleNativeShare}>Compartilhar</button>
+                        )}
+                        <button className="submenu-item" onClick={handleCopyMessage}>
+                          {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
+                        </button>
                     </div>
                   )}
                   <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>🚪 Sair</button>
@@ -307,17 +321,58 @@ export default function GrupoPage() {
           )}
         </div>
 
-        {/* INFO GRUPO */}
+        {/* INFO GRUPO + BOTÕES DE AÇÃO */}
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
-          <p className="subtitle">
-             {isUserMember ? `👥 ${profiles.length} membros` : 'Para entrar, informe seu Instagram:'}
-          </p>
+          
+          <div className="subtitle" style={{marginTop: 5}}>
+              {!isUserMember ? (
+                'Para entrar, informe seu Instagram:'
+              ) : (
+                // ✅ BOTÕES LIMPOS COM FUNDO CINZA ESCURO
+                <div style={{display:'flex', gap:10, justifyContent:'center', marginTop:15}}>
+                   <button 
+                      onClick={handleCopyMessage} 
+                      style={{
+                        background: '#2a2a2a', 
+                        border: '1px solid #3a3a3a', 
+                        color: '#fff', 
+                        padding: '8px 16px', 
+                        borderRadius: '20px', 
+                        fontSize: '13px', 
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        transition: 'all 0.2s ease',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#333'}
+                      onMouseOut={(e) => e.currentTarget.style.background = '#2a2a2a'}
+                    >
+                       {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
+                    </button>
+                    <button 
+                      onClick={handleNativeShare} 
+                      style={{
+                        background: '#0070f3', 
+                        border: '1px solid #0070f3',
+                        color: '#fff', 
+                        padding: '8px 16px', 
+                        borderRadius: '20px', 
+                        fontSize: '13px', 
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        boxShadow: '0 2px 5px rgba(0,112,243,0.3)'
+                      }}>
+                       Compartilhar
+                    </button>
+                </div>
+              )}
+          </div>
         </div>
 
         {/* ================================================================= */}
-        {/* 🚀 ÁREA DE LOGIN EMBUTIDO (Aparece se não tiver usuário logado) */}
+        {/* LOGIN EMBUTIDO */}
         {/* ================================================================= */}
         {!userProfile && (
             <div className="login-embedded-container" style={{ marginBottom: 20 }}>
@@ -335,15 +390,14 @@ export default function GrupoPage() {
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:12, width:20, height:20}}></div>
                         )}
                     </div>
-
-                    {/* LISTA DE RESULTADOS DA BUSCA */}
+                    {/* RESULTADOS DA BUSCA */}
                     {searchResults.length > 0 && (
                         <div className="search-results-dropdown" style={{ 
                             position: 'absolute', 
                             top: '100%', 
                             left: 0, 
                             right: 0, 
-                            background: '#1a1a1a', 
+                            background: '#111', 
                             border: '1px solid #333',
                             borderRadius: 8,
                             zIndex: 10,
@@ -353,7 +407,7 @@ export default function GrupoPage() {
                                 <div 
                                     key={p.username} 
                                     className="search-result-item"
-                                    style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #333' }}
+                                    style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
                                     onClick={() => handleLoginAndJoin(p)}
                                 >
                                     <img src={p.profilePic} style={{width:35, height:35, borderRadius:'50%'}} onError={(e) => handleImageError(e, p.username)}/>
@@ -371,7 +425,7 @@ export default function GrupoPage() {
             </div>
         )}
 
-        {/* BOTÃO PARTICIPAR (Se já logado, mas não membro) */}
+        {/* BOTÃO PARTICIPAR */}
         {userProfile && !isUserMember && (
           <div className="join-section">
              <div style={{textAlign:'center', marginBottom:15, fontSize:14, color:'#aaa'}}>
@@ -393,17 +447,77 @@ export default function GrupoPage() {
           </div>
         )}
 
-        {/* ARENA E STATS (Só mostra se for membro) */}
+{/* ARENA E STATS */}
         {isUserMember && profiles.length > 0 && (
           <div className="profiles-container">
-            <div className="total-stats-mobile">
-              <div className="stats-icon">📊</div>
-              <div className="stats-content-mobile">
-                <div className="total-number-mobile">{formatNumber(getTotalFollowers())}</div>
-                <div className="total-label-mobile">seguidores no total</div>
+            
+            {/* ✅ ESTATÍSTICAS UNIFICADAS (Padding Aumentado) */}
+            <div className="total-stats-mobile" style={{
+              marginBottom: '20px',
+              padding: '25px 35px', 
+              display: 'flex',
+              justifyContent: 'space-around',
+              alignItems: 'center',
+              height: 'auto'
+            }}>
+              
+              {/* BLOCO MEMBROS (Sem emoji, Label acima) */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}>
+                <div 
+                  className="total-label-mobile" 
+                  style={{ marginBottom: '9px', fontSize: '15px' }}
+                >
+                  membros
+                </div>
+                <div 
+                  className="total-number-mobile" 
+                  style={{ fontSize: '30px' }}
+                >
+                  {profiles.length}
+                </div>
               </div>
-            </div>
 
+              {/* Divisória sutil */}
+              <div style={{ 
+                width: '1px', 
+                height: '30px', 
+                background: 'rgba(255,255,255,0.1)' 
+              }}></div>
+
+              {/* BLOCO SEGUIDORES (Com emoji 📊, Label acima) */}
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '9px', 
+                  marginBottom: '9px'
+                }}>
+                  <div 
+                    className="total-label-mobile" 
+                    style={{ fontSize: '15px' }}
+                  >
+                    seguidores total
+                  </div>
+                </div>
+                <div 
+                  className="total-number-mobile" 
+                  style={{ fontSize: '30px' }}
+                >
+                  {formatNumber(getTotalFollowers())}
+                </div>
+              </div>
+
+            </div>
             <ProfilesArena 
               profiles={profiles}
               onImageError={handleImageError}
@@ -429,7 +543,7 @@ export default function GrupoPage() {
 }
 
 // ==========================================
-// ARENA & FÍSICA (CÓDIGO DE REFERÊNCIA FIEL)
+// ARENA & FÍSICA
 // ==========================================
 
 interface ProfilesArenaProps {
@@ -504,7 +618,6 @@ function MovingProfile({
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
 
-  // ✅ CONSTANTE DE SEGURANÇA PARA AS BORDAS
   const BOUNDARY_PADDING = 10 
 
   const calculateImageSize = (followers: number): number => {
@@ -524,7 +637,6 @@ function MovingProfile({
 
   const imageSize = calculateImageSize(profile.followers)
 
-  // Funções de Colisão
   const checkCollision = (
     pos1: { x: number; y: number }, 
     pos2: { x: number; y: number }, 
@@ -569,14 +681,12 @@ function MovingProfile({
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
-      // ✅ Inicializa com padding para não nascer colado na borda
       const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
       const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
       
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
 
-      // 🛠️ LÓGICA DE VELOCIDADE
       let speed;
       if (profile.isVerified) {
         speed = 1.5 + Math.random() * 1.5; 
@@ -603,14 +713,11 @@ function MovingProfile({
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
 
-        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão lateral
         if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.x *= -1
           newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
         }
 
-        // ✅ CORREÇÃO AQUI: Adicionado BOUNDARY_PADDING na colisão inferior/superior
-        // Isso impede que a imagem passe da borda do container
         if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.y *= -1
           newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
@@ -700,26 +807,13 @@ function MovingProfile({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* 👑 COROA FIXA SOBRE A FOTO */}
-      {isAdmin && (
-        <div className="admin-crown">👑</div>
-      )}
+      {isAdmin && <div className="admin-crown">👑</div>}
       
       {isHovered && (
         <div className={getTooltipClass()} style={{zIndex: 999}}>
           <div className="profile-username">
             @{profile.username}
-            {/* 👑 TEXTO ADM DOURADO */}
-            {isAdmin && (
-              <span style={{ 
-                color: '#FFD700', 
-                fontWeight: 'bold', 
-                marginLeft: '6px',
-                textShadow: '0 0 5px rgba(255, 215, 0, 0.5)'
-              }}>
-                ADM
-              </span>
-            )}
+            {isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '6px'}}>ADM</span>}
           </div>
           <div className="profile-followers">
             {formatNumber(profile.followers)} seguidores
@@ -782,7 +876,6 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
           <div className="modal-user-info">
             <div className="modal-username">
               @{profile.username}
-              {/* Opcional: Mostrar badge no modal também */}
               {profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
             </div>
             <div className="modal-fullname">{profile.fullName || profile.username}</div>

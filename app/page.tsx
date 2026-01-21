@@ -136,11 +136,7 @@ export default function Home() {
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Erro ao sair')
 
-      if (data.groupDeleted) {
-        alert('🗑️ Você era o último membro. O grupo foi deletado.')
-      } else {
-        alert('✅ Você saiu do grupo!')
-      }
+
       loadUserGroups(userProfile.username)
     } catch (error) {
       alert('Erro ao sair do grupo.')

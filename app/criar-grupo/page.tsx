@@ -136,7 +136,8 @@ export default function CriarGrupoPage() {
       if (data.success && data.groupId) {
         console.log('✅ Grupo criado com ID:', data.groupId)
         
-        alert(`✅ Grupo "${groupName}" criado com sucesso!`)
+        // 🗑️ REMOVIDO O ALERT CHATO AQUI
+        // Redireciona imediatamente
         router.push(`/grupo/${data.groupId}`)
       } else {
         throw new Error('Resposta inválida da API')
@@ -360,7 +361,8 @@ export default function CriarGrupoPage() {
                     onClick={() => handleIconSelect(icon)}
                   >
                     <span className="icon-picker-emoji">{icon.emoji}</span>
-                    <span className="icon-picker-name">{icon.name}</span>
+                    {/* ✅ COR DO TEXTO FORÇADA PARA BRANCO */}
+                    <span className="icon-picker-name" style={{ color: 'white' }}>{icon.name}</span>
                     {selectedIcon.id === icon.id && (
                       <div className="icon-selected-badge">✓</div>
                     )}
