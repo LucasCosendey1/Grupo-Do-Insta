@@ -49,7 +49,6 @@ export default function GrupoPage() {
   const router = useRouter()
   const params = useParams()
   
-  // ✅ CORREÇÃO: Garantir que groupId não seja undefined
   const groupId = (params?.id as string) || ''
   
   // Estados de Dados do Grupo
@@ -83,7 +82,6 @@ export default function GrupoPage() {
       router.push('/')
       return
     }
-    console.log('✅ groupId recebido:', groupId)
   }, [groupId, router])
 
   // ✅ 2. Inicialização
@@ -108,21 +106,16 @@ export default function GrupoPage() {
     async function loadGroup() {
       try {
         setIsLoadingGroup(true)
-        console.log('🔍 Carregando grupo:', groupId)
         
         const response = await fetch(`/api/grupos/${groupId}`, { 
           cache: 'no-store' 
         })
         
-        console.log('📡 Response status:', response.status)
-        
         if (!response.ok) {
-          console.error('❌ Erro HTTP:', response.status)
           throw new Error('Grupo não encontrado')
         }
         
         const data = await response.json()
-        console.log('✅ Dados recebidos:', data)
         
         if (data.success && data.group) {
           setGroupData(data.group)
@@ -228,7 +221,7 @@ export default function GrupoPage() {
         setIsUserMember(true)
 
     } catch (err) {
-        alert('Login salvo, mas houve um erro ao entrar no grupo.')
+        alert('Erro ao entrar no grupo.')
     } finally {
         setIsJoining(false)
     }
@@ -269,11 +262,7 @@ export default function GrupoPage() {
 
   const handleCopyMessage = () => {
     const link = `${window.location.origin}/grupo/${groupId}`
-    const groupName = groupData?.name || 'Grupo'
-    const membersCount = profiles.length
-    const followersCount = formatNumber(getTotalFollowers())
-
-    const msg = `✨ Convite Especial!\n\nVenha fazer parte do "${groupName}" 🚀\n\n👥 ${membersCount} Membros\n📊 ${followersCount} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
+    const msg = `🚀 Entre no meu grupo "${groupData?.name}"!\n\n${link}`
     
     navigator.clipboard.writeText(msg)
     setCopiedType('message')
@@ -283,13 +272,16 @@ export default function GrupoPage() {
   const handleNativeShare = async () => {
     if (typeof navigator.share === 'function' && groupData) {
         const link = `${window.location.origin}/grupo/${groupId}`
-        const followersCount = formatNumber(getTotalFollowers())
-        const msg = `Venha fazer parte do grupo "${groupData.name}"! Já somos ${profiles.length} membros com ${followersCount} seguidores.`
-        navigator.share({ title: `Convite: ${groupData.name}`, text: msg, url: link })
+        const msg = `✨ Convite Especial!\nVenha fazer parte do "${groupData.name}" 🚀\n\n👥 ${profiles.length} Membros\n📊 ${formatNumber(getTotalFollowers())} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
+        
+        navigator.share({ 
+            title: `Convite: ${groupData.name}`, 
+            text: msg
+          })
     } else {
         handleCopyMessage()
     }
-  }
+}
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
     e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
@@ -315,11 +307,14 @@ export default function GrupoPage() {
     <div className="container">
       <div className="card grupo-card">
         
-        {/* HEADER TOP */}
-        <div className="grupo-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <Link href="/" className="btn-back-large">
-            <span className="back-arrow-large">←</span><span>Voltar</span>
-          </Link>
+          {/* HEADER TOP */}
+            <div className="grupo-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                {/* 👇 BOTÃO VOLTAR SÓ APARECE SE FOR MEMBRO 👇 */}
+                {isUserMember && (
+                  <Link href="/" className="btn-back-large">
+                    <span className="back-arrow-large">←</span><span>Voltar</span>
+                  </Link>
+              )}
 
           {isUserMember && (
             <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
@@ -331,9 +326,7 @@ export default function GrupoPage() {
                   </button>
                   {showShareOptions && (
                     <div className="share-submenu">
-                        {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
-                          <button className="submenu-item" onClick={handleNativeShare}>Compartilhar</button>
-                        )}
+                        <button className="submenu-item" onClick={handleNativeShare}>Nativo</button>
                         <button className="submenu-item" onClick={handleCopyMessage}>
                           {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
                         </button>
@@ -353,63 +346,108 @@ export default function GrupoPage() {
           
           <div className="subtitle" style={{marginTop: 5}}>
               {!isUserMember ? (
-                'Para entrar, informe seu Instagram:'
+                'Para entrar no grupo, informe seu Instagram:'
               ) : (
-                <div style={{display:'flex', gap:10, justifyContent:'center', marginTop:15}}>
-                   <button 
-                      onClick={handleCopyMessage} 
-                      style={{
-                        background: '#2a2a2a', 
-                        border: '1px solid #3a3a3a', 
-                        color: '#fff', 
-                        padding: '8px 16px', 
-                        borderRadius: '20px', 
-                        fontSize: '13px', 
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease',
-                        boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-                      }}
-                      onMouseOver={(e) => e.currentTarget.style.background = '#333'}
-                      onMouseOut={(e) => e.currentTarget.style.background = '#2a2a2a'}
-                    >
-                       {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
-                    </button>
-                    <button 
-                      onClick={handleNativeShare} 
-                      style={{
-                        background: '#0070f3', 
-                        border: '1px solid #0070f3',
-                        color: '#fff', 
-                        padding: '8px 16px', 
-                        borderRadius: '20px', 
-                        fontSize: '13px', 
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        boxShadow: '0 2px 5px rgba(0,112,243,0.3)'
-                      }}>
-                       Compartilhar
-                    </button>
+                <div style={{display:'flex', flexDirection: 'column', alignItems: 'center', marginTop: 20, width: '100%', padding: '0 10px', boxSizing: 'border-box'}}>
+                    <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>
+                       Convide seus amigos e ajude o grupo a decolar! 🚀
+                    </p>
+                    
+                    {/* 👇 ÁREA DOS BOTÕES DE COMPARTILHAMENTO 👇 */}
+                    <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
+                        
+                        {/* 1. BOTÃO CINZA APAGADO (COPIAR LINK) - AGORA À ESQUERDA E MENOR */}
+                        <button 
+                          onClick={handleCopyMessage} 
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.06)', // Mais apagado
+                            border: '1px solid rgba(255, 255, 255, 0.08)', 
+                            color: 'rgba(255, 255, 255, 0.4)', // Texto mais apagado
+                            padding: '10px 16px', // Menor
+                            borderRadius: '50px', 
+                            fontSize: '13px', // Fonte menor
+                            cursor: 'pointer',
+                            fontWeight: '500', // Peso menor
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
+                          }}
+                          onMouseOver={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'
+                          }}
+                          onMouseOut={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'
+                          }}
+                        >
+                            <span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}
+                        </button>
+
+                        {/* 2. BOTÃO VERDE GRANDE (COMPARTILHAR) - AGORA NO CENTRO E DESTAQUE */}
+                        <button 
+                          onClick={handleNativeShare} 
+                          style={{
+                            background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)', 
+                            border: 'none',
+                            color: '#000', 
+                            padding: '12px 28px', 
+                            borderRadius: '50px', 
+                            fontSize: '15px', 
+                            cursor: 'pointer',
+                            fontWeight: '800', 
+                            boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            transition: 'all 0.2s ease',
+                            flex: 1,
+                            minWidth: '160px',
+                            maxWidth: '240px',
+                            justifyContent: 'center',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
+                          onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                             Compartilhar Grupo
+                        </button>
+
+                    </div>
                 </div>
               )}
           </div>
         </div>
 
-        {/* LOGIN EMBUTIDO */}
+{/* LOGIN EMBUTIDO */}
         {!userProfile && (
-            <div className="login-embedded-container" style={{ marginBottom: 20 }}>
+            <div className="login-embedded-container" style={{ marginBottom: 20, padding: '0 10px' }}>
                 <div className="input-group" style={{ position: 'relative' }}>
                     <div className="input-wrapper">
-                        <span className="input-prefix" style={{position:'absolute', left:15, top:12, fontSize:18, color:'#666'}}>@</span>
+                        <span className="input-prefix" style={{position:'absolute', left:15, top:'50%', transform: 'translateY(-50%)', fontSize:18, color:'#666', zIndex: 1}}>@</span>
                         <input 
                             className="input" 
-                            style={{paddingLeft: 35}}
+                            style={{
+                                paddingLeft: 35, 
+                                width: '100%', 
+                                boxSizing: 'border-box',
+                                // 👇 ESTILO NEON VERDE PERMANENTE 👇
+                                border: '1px solid #00ff88',
+                                boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)',
+                                borderRadius: '12px',
+                                outline: 'none', // Remove a borda padrão do navegador ao clicar
+                                backgroundColor: 'rgba(0, 0, 0, 0.2)', // Fundo levemente escuro para destacar o neon
+                                color: '#fff'
+                            }}
                             placeholder="seu_usuario_insta"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                          {isSearching && (
-                            <div className="mini-spinner" style={{position:'absolute', right:15, top:12, width:20, height:20}}></div>
+                            <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
                         )}
                     </div>
                     {searchResults.length > 0 && (
@@ -419,10 +457,12 @@ export default function GrupoPage() {
                             left: 0, 
                             right: 0, 
                             background: '#111', 
-                            border: '1px solid #333',
+                            border: '1px solid #333', 
                             borderRadius: 8,
                             zIndex: 10,
-                            marginTop: 5
+                            marginTop: 5,
+                            maxHeight: '300px',
+                            overflowY: 'auto'
                         }}>
                             {searchResults.map(p => (
                                 <div 
@@ -431,12 +471,12 @@ export default function GrupoPage() {
                                     style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
                                     onClick={() => handleLoginAndJoin(p)}
                                 >
-                                    <img src={p.profilePic} style={{width:35, height:35, borderRadius:'50%'}} onError={(e) => handleImageError(e, p.username)}/>
-                                    <div style={{flex:1}}>
-                                        <div style={{fontWeight:'bold', fontSize:14}}>@{p.username}</div>
-                                        <div style={{fontSize:12, color:'#888'}}>{p.fullName}</div>
+                                    <img src={p.profilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
+                                    <div style={{flex:1, minWidth: 0}}>
+                                        <div style={{fontWeight:'bold', fontSize:14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>@{p.username}</div>
+                                        <div style={{fontSize:12, color:'#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.fullName}</div>
                                     </div>
-                                    <div style={{fontSize:12, color:'#4CAF50'}}>Entrar →</div>
+                                    <div style={{fontSize:12, color:'#4CAF50', flexShrink: 0}}>Entrar →</div>
                                 </div>
                             ))}
                         </div>
@@ -448,11 +488,11 @@ export default function GrupoPage() {
 
         {/* BOTÃO PARTICIPAR */}
         {userProfile && !isUserMember && (
-          <div className="join-section">
-             <div style={{textAlign:'center', marginBottom:15, fontSize:14, color:'#aaa'}}>
+          <div className="join-section" style={{padding: '0 10px'}}>
+             <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>
                 Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong>
              </div>
-             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining}>
+             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining} style={{width: '100%', maxWidth: '100%'}}>
                {isJoining ? '⏳ Entrando...' : '✨ Entrar no Grupo'}
              </button>
              <button 
@@ -472,23 +512,24 @@ export default function GrupoPage() {
         {isUserMember && profiles.length > 0 && (
           <div className="profiles-container">
             <div className="total-stats-mobile" style={{
-              marginBottom: '20px',
-              padding: '25px 35px', 
+              marginBottom: '16px',
+              padding: '16px 20px', 
               display: 'flex',
               justifyContent: 'space-around',
               alignItems: 'center',
-              height: 'auto'
+              height: 'auto',
+              gap: '15px'
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="total-label-mobile" style={{ marginBottom: '9px', fontSize: '15px' }}>membros</div>
-                <div className="total-number-mobile" style={{ fontSize: '30px' }}>{profiles.length}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                <div className="total-label-mobile" style={{ marginBottom: '6px', fontSize: '13px', textTransform: 'lowercase' }}>membros</div>
+                <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{profiles.length}</div>
               </div>
               <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }}></div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '9px'}}>
-                  <div className="total-label-mobile" style={{ fontSize: '15px' }}>seguidores total</div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px'}}>
+                  <div className="total-label-mobile" style={{ fontSize: '13px', textTransform: 'lowercase' }}>seguidores total</div>
                 </div>
-                <div className="total-number-mobile" style={{ fontSize: '30px' }}>{formatNumber(getTotalFollowers())}</div>
+                <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{formatNumber(getTotalFollowers())}</div>
               </div>
             </div>
             <ProfilesArena 
@@ -536,7 +577,15 @@ function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername
   }
 
   return (
-    <div className="profiles-arena">
+    <div className="profiles-arena" style={{
+      position: 'relative',
+      width: '100%',
+      minHeight: '400px',
+      height: 'calc(100vh - 450px)',
+      maxHeight: '600px',
+      overflow: 'hidden',
+      touchAction: 'pan-y pinch-zoom'
+    }}>
       {profiles.map((profile) => (
         <MovingProfile 
           key={profile.username}
@@ -570,11 +619,11 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
 
-  const BOUNDARY_PADDING = 10 
+  const BOUNDARY_PADDING = 5 
 
   const calculateImageSize = (followers: number): number => {
-    const MIN_SIZE = 50
-    const MAX_SIZE = 120
+    const MIN_SIZE = 45
+    const MAX_SIZE = 100
     if (followers <= 1000) return MIN_SIZE
     if (followers >= 1000000) return MAX_SIZE
     const logMin = Math.log10(1000)
@@ -616,7 +665,7 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
       const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
-      const speed = profile.isVerified ? (1.5 + Math.random() * 1.5) : (1.0 + Math.random() * 1.4)
+      const speed = profile.isVerified ? (1.3 + Math.random() * 1.3) : (0.9 + Math.random() * 1.2)
       const angle = Math.random() * Math.PI * 2
       velocityRef.current = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }
       isInitializedRef.current = true
@@ -695,15 +744,49 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
   }
 
   return (
-    <div ref={containerRef} className="profile-pic-container" style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${imageSize}px`, height: `${imageSize}px`, position: 'absolute' }} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-      {isAdmin && <div className="admin-crown">👑</div>}
+    <div 
+      ref={containerRef} 
+      className="profile-pic-container" 
+      style={{ 
+        left: `${position.x}px`, 
+        top: `${position.y}px`, 
+        width: `${imageSize}px`, 
+        height: `${imageSize}px`, 
+        position: 'absolute',
+        touchAction: 'none'
+      }} 
+      onMouseEnter={() => setIsHovered(true)} 
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
+    >
+      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
       {isHovered && (
-        <div className={getTooltipClass()} style={{zIndex: 999}}>
-          <div className="profile-username">@{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '6px'}}>ADM</span>}</div>
-          <div className="profile-followers">{formatNumber(profile.followers)} seguidores</div>
+        <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
+          <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
+            @{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
+          </div>
+          <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
-      <img src={profile.profilePic} alt={profile.username} className="profile-pic" onError={(e) => onImageError(e, profile.username)} onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} loading="lazy" />
+      <img 
+        src={profile.profilePic} 
+        alt={profile.username} 
+        className="profile-pic" 
+        onError={(e) => onImageError(e, profile.username)} 
+        onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
+        loading="lazy"
+        style={{
+          width: '100%',
+          height: '100%',
+          borderRadius: '50%',
+          objectFit: 'cover',
+          cursor: 'pointer',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none'
+        }}
+      />
     </div>
   )
 }
@@ -734,26 +817,145 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={handleOverlayClick}>
-      <div className="modal-content">
-        <button className="modal-close" onClick={onClose}>×</button>
-        <div className="modal-header-compact">
-          <img src={profile.profilePic} alt={profile.username} className="modal-profile-pic-small" onError={(e) => onImageError(e, profile.username)} />
-          <div className="modal-user-info">
-            <div className="modal-username">@{profile.username}{profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}</div>
-            <div className="modal-fullname">{profile.fullName || profile.username}</div>
+    <div className="modal-overlay" onClick={handleOverlayClick} style={{
+      padding: '20px',
+      overflowY: 'auto',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div className="modal-content" style={{
+        width: '100%',
+        maxWidth: '450px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        margin: '0 auto'
+      }}>
+        <button 
+          className="modal-close" 
+          onClick={onClose}
+          style={{
+            minWidth: '44px',
+            minHeight: '44px',
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '28px',
+            padding: 0
+          }}
+        >×</button>
+        
+        <div className="modal-header-compact" style={{padding: '25px 20px 20px'}}>
+          <img 
+            src={profile.profilePic} 
+            alt={profile.username} 
+            className="modal-profile-pic-small" 
+            onError={(e) => onImageError(e, profile.username)}
+            loading="lazy"
+            style={{
+              width: '70px',
+              height: '70px',
+              flexShrink: 0
+            }}
+          />
+          <div className="modal-user-info" style={{flex: 1, minWidth: 0, overflow: 'hidden'}}>
+            <div className="modal-username" style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              width: '100%'
+            }}>
+              @{profile.username}{profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
+            </div>
+            <div className="modal-fullname" style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              width: '100%'
+            }}>
+              {profile.fullName || profile.username}
+            </div>
           </div>
         </div>
-        <div className="modal-stats">
-          <div className="stat-item"><div className="stat-number">{formatNumber(profile.posts || 0)}</div><div className="stat-label">Posts</div></div>
-          <div className="stat-item"><div className="stat-number">{formatNumber(profile.followers || 0)}</div><div className="stat-label">Seguidores</div></div>
-          <div className="stat-item"><div className="stat-number">{formatNumber(profile.following || 0)}</div><div className="stat-label">Seguindo</div></div>
+
+        <div className="modal-stats" style={{
+          display: 'flex',
+          justifyContent: 'space-around',
+          padding: '20px 10px',
+          gap: '10px',
+          flexWrap: 'wrap'
+        }}>
+          <div className="stat-item" style={{
+            textAlign: 'center',
+            minWidth: '80px',
+            flex: '1 1 auto'
+          }}>
+            <div className="stat-number" style={{wordBreak: 'break-word'}}>
+              {formatNumber(profile.posts || 0)}
+            </div>
+            <div className="stat-label">Posts</div>
+          </div>
+          <div className="stat-item" style={{
+            textAlign: 'center',
+            minWidth: '80px',
+            flex: '1 1 auto'
+          }}>
+            <div className="stat-number" style={{wordBreak: 'break-word'}}>
+              {formatNumber(profile.followers || 0)}
+            </div>
+            <div className="stat-label">Seguidores</div>
+          </div>
+          <div className="stat-item" style={{
+            textAlign: 'center',
+            minWidth: '80px',
+            flex: '1 1 auto'
+          }}>
+            <div className="stat-number" style={{wordBreak: 'break-word'}}>
+              {formatNumber(profile.following || 0)}
+            </div>
+            <div className="stat-label">Seguindo</div>
+          </div>
         </div>
-        <div className="modal-bio-section">
+
+        <div className="modal-bio-section" style={{
+          padding: '20px',
+          maxHeight: '200px',
+          overflowY: 'auto'
+        }}>
           <div className="modal-bio-label">Biografia</div>
-          {profile.biography ? <div className="modal-bio-text">{profile.biography}</div> : <div className="modal-bio-empty">Nenhuma biografia disponível</div>}
+          {profile.biography ? (
+            <div className="modal-bio-text" style={{
+              wordBreak: 'break-word',
+              overflowWrap: 'break-word',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {profile.biography}
+            </div>
+          ) : (
+            <div className="modal-bio-empty">Nenhuma biografia disponível</div>
+          )}
         </div>
-        <a href={`https://www.instagram.com/${profile.username}`} target="_blank" rel="noopener noreferrer" className="modal-link-btn">📸 Ver no Instagram</a>
+
+        <a 
+          href={`https://www.instagram.com/${profile.username}`} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="modal-link-btn"
+          style={{
+            display: 'block',
+            margin: '0 20px 20px',
+            padding: '14px',
+            textAlign: 'center',
+            minHeight: '48px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          📸 Ver no Instagram
+        </a>
       </div>
     </div>
   )

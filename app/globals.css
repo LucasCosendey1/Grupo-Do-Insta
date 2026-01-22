@@ -182,10 +182,14 @@ h1 {
   letter-spacing: 0.5px;
 }
 
+/* ============================================ */
+/* ALTERAÇÃO SOLICITADA: INPUT NEON VERDE */
+/* ============================================ */
 .input {
   width: 100%;
   background: rgba(var(--primary-rgb), 0.03);
-  border: 1px solid var(--border-light);
+  /* Borda Verde Neon Fixa */
+  border: 2px solid #00ff88;
   color: var(--text-main);
   padding: 16px 20px;
   border-radius: var(--radius-md);
@@ -193,15 +197,19 @@ h1 {
   font-family: inherit;
   transition: var(--transition-default);
   outline: none;
+  /* Sombra Verde Neon Inicial */
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
 }
 
 .input:focus {
-  border-color: var(--primary);
+  /* Borda mantém Verde Neon no foco */
+  border-color: #00ff88;
   background: rgba(var(--primary-rgb), 0.05);
-  box-shadow: 
-    0 0 0 3px rgba(var(--primary-rgb), 0.1),
-    0 0 20px rgba(var(--primary-rgb), 0.2);
+  /* Sombra Verde Neon Intensificada no foco */
+  box-shadow: 0 0 25px rgba(0, 255, 136, 0.7);
 }
+/* ============================================ */
+
 .input::placeholder { color: rgba(255, 255, 255, 0.3); }
 
 /* BUTTONS GERAIS */

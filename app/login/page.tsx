@@ -174,10 +174,6 @@ function LoginContent() {
   return (
     <div className="container">
       <div className="card login-card">
-        <Link href="/" className="btn-back">
-          <span className="back-arrow">←</span>
-          <span>Voltar</span>
-        </Link>
 
         {/* ✅ 2. HEADER CONDICIONAL */}
         <div className="header">
@@ -213,6 +209,8 @@ function LoginContent() {
               {isJoinFlow ? 'Seu usuário do Insta' : 'Buscar seu perfil'}
             </label>
             <div className="input-wrapper">
+              
+              {/* 👇👇👇 AQUI ESTÁ A MUDANÇA PARA O NEON VERDE SEMPRE ACESO 👇👇👇 */}
               <input
                 type="text"
                 id="instagram-search"
@@ -227,7 +225,14 @@ function LoginContent() {
                 placeholder="Digite seu @username"
                 className="input input-search"
                 autoComplete="off"
+                style={{
+                  borderColor: '#00ff88', // Cor da borda Neon
+                  boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', // O brilho Neon (Sempre Ativo)
+                  transition: 'all 0.3s ease'
+                }}
               />
+              {/* 👆👆👆 FIM DA MUDANÇA 👆👆👆 */}
+
               {isSearching && (
                 <div className="search-loading">
                   <div className="mini-spinner"></div>
@@ -320,10 +325,10 @@ function LoginContent() {
                 <span className="btn-icon">✨</span>
                 {/* Texto do botão muda se for fluxo de convite */}
                 <span>
-                   {isJoinFlow 
+                    {isJoinFlow 
                       ? `Entrar no Grupo como @${selectedProfile.username}`
                       : `Continuar como @${selectedProfile.username}`
-                   }
+                    }
                 </span>
                 <span className="btn-arrow">→</span>
               </>

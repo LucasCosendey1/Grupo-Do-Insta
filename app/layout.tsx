@@ -1,7 +1,7 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Instagram Followers',
+  title: 'Insta do Grupo',
   description: 'Veja seus seguidores do Instagram',
 }
 
