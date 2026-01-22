@@ -62,7 +62,6 @@ export default function CriarGrupoPage() {
     setUsernameError('')
 
     try {
-      // Remove @ se existir
       const cleanUsername = tempUsername.replace('@', '').trim().toLowerCase()
       const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
       
@@ -106,7 +105,6 @@ export default function CriarGrupoPage() {
       return
     }
 
-    // ✅ TypeScript: garantir que userProfile não é null
     if (!userProfile) return
 
     setIsLoading(true)
@@ -133,12 +131,15 @@ export default function CriarGrupoPage() {
 
       const data = await response.json()
       
-      if (data.success && data.groupId) {
-        console.log('✅ Grupo criado com ID:', data.groupId)
+      // ✨ CORREÇÃO: Prioriza slug, fallback para groupId
+      if (data.success && (data.slug || data.groupId)) {
+        const identifier = data.slug || data.groupId
+        console.log('✅ Grupo criado com identificador:', identifier)
+        console.log('🔗 Slug:', data.slug)
+        console.log('🆔 ID (legado):', data.groupId)
         
-        // 🗑️ REMOVIDO O ALERT CHATO AQUI
-        // Redireciona imediatamente
-        router.push(`/grupo/${data.groupId}`)
+        // Redireciona usando o identificador correto
+        router.push(`/grupo/${identifier}`)
       } else {
         throw new Error('Resposta inválida da API')
       }
@@ -361,7 +362,6 @@ export default function CriarGrupoPage() {
                     onClick={() => handleIconSelect(icon)}
                   >
                     <span className="icon-picker-emoji">{icon.emoji}</span>
-                    {/* ✅ COR DO TEXTO FORÇADA PARA BRANCO */}
                     <span className="icon-picker-name" style={{ color: 'white' }}>{icon.name}</span>
                     {selectedIcon.id === icon.id && (
                       <div className="icon-selected-badge">✓</div>

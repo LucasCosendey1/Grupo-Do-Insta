@@ -24,14 +24,16 @@ interface Profile {
 
 interface GroupData {
   id: string
+  slug?: string
   name: string
   icon: {
-    id: string
+    id?: string
     emoji: string
     name: string
   }
-  creator: string
-  members: Profile[]
+  creator?: string
+  profiles?: Profile[]
+  members?: Profile[]
   createdAt: string
 }
 
@@ -46,7 +48,9 @@ interface UserProfile {
 export default function GrupoPage() {
   const router = useRouter()
   const params = useParams()
-  const groupId = params.id as string
+  
+  // ✅ CORREÇÃO: Garantir que groupId não seja undefined
+  const groupId = (params?.id as string) || ''
   
   // Estados de Dados do Grupo
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -72,7 +76,17 @@ export default function GrupoPage() {
   const menuRef = useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = useState(false)
 
-  // ✅ 1. Inicialização e Verificação de Login
+  // ✅ 1. Validação de Rota
+  useEffect(() => {
+    if (!groupId) {
+      console.error('❌ groupId está undefined!')
+      router.push('/')
+      return
+    }
+    console.log('✅ groupId recebido:', groupId)
+  }, [groupId, router])
+
+  // ✅ 2. Inicialização
   useEffect(() => {
     setIsMounted(true)
     if (typeof window !== 'undefined') {
@@ -87,31 +101,44 @@ export default function GrupoPage() {
     }
   }, [])
 
-  // ✅ 2. Carregar Grupo
+  // ✅ 3. Carregar Grupo
   useEffect(() => {
     if (!groupId) return
+    
     async function loadGroup() {
       try {
         setIsLoadingGroup(true)
-        const response = await fetch(`/api/grupos/${groupId}`, { cache: 'no-store' })
+        console.log('🔍 Carregando grupo:', groupId)
         
-        if (!response.ok) throw new Error('Grupo não encontrado')
+        const response = await fetch(`/api/grupos/${groupId}`, { 
+          cache: 'no-store' 
+        })
+        
+        console.log('📡 Response status:', response.status)
+        
+        if (!response.ok) {
+          console.error('❌ Erro HTTP:', response.status)
+          throw new Error('Grupo não encontrado')
+        }
         
         const data = await response.json()
+        console.log('✅ Dados recebidos:', data)
+        
         if (data.success && data.group) {
           setGroupData(data.group)
           setProfiles(data.group.profiles || [])
         }
       } catch (error) {
-        console.error('Erro:', error)
+        console.error('❌ Erro ao carregar grupo:', error)
       } finally {
         setIsLoadingGroup(false)
       }
     }
+    
     loadGroup()
   }, [groupId])
 
-  // ✅ 3. Verificar Membro
+  // ✅ 4. Verificar Membro
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
       const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
@@ -119,7 +146,7 @@ export default function GrupoPage() {
     }
   }, [userProfile, profiles])
 
-  // ✅ 4. Lógica de Busca de Perfil (Login Embutido)
+  // ✅ 5. Lógica de Busca
   useEffect(() => {
     if (searchTerm.length < 2) {
       setSearchResults([])
@@ -200,9 +227,8 @@ export default function GrupoPage() {
         })
         setIsUserMember(true)
 
-
     } catch (err) {
-        alert('Login salvo, mas houve um erro ao entrar no grupo. Tente clicar em "Participar".')
+        alert('Login salvo, mas houve um erro ao entrar no grupo.')
     } finally {
         setIsJoining(false)
     }
@@ -233,7 +259,6 @@ export default function GrupoPage() {
     setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase()))
   }
 
-  // ✅ Lógica de formatação do número (Movida para cima para ser usada no share)
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -242,7 +267,6 @@ export default function GrupoPage() {
 
   const getTotalFollowers = () => profiles.reduce((total, p) => total + p.followers, 0)
 
-  // ✅ NOVA LÓGICA DE COPIAR MENSAGEM
   const handleCopyMessage = () => {
     const link = `${window.location.origin}/grupo/${groupId}`
     const groupName = groupData?.name || 'Grupo'
@@ -256,19 +280,12 @@ export default function GrupoPage() {
     setTimeout(() => setCopiedType(null), 2000)
   }
 
-  // ✅ NOVA LÓGICA DE COMPARTILHAMENTO NATIVO (Mobile)
   const handleNativeShare = async () => {
     if (typeof navigator.share === 'function' && groupData) {
         const link = `${window.location.origin}/grupo/${groupId}`
         const followersCount = formatNumber(getTotalFollowers())
-        
-        const msg = `Venha fazer parte do grupo"${groupData.name}"! Já somos ${profiles.length} membros com ${followersCount} seguidores.`
-
-        navigator.share({ 
-            title: `Convite: ${groupData.name}`, 
-            text: msg,
-            url: link 
-        })
+        const msg = `Venha fazer parte do grupo "${groupData.name}"! Já somos ${profiles.length} membros com ${followersCount} seguidores.`
+        navigator.share({ title: `Convite: ${groupData.name}`, text: msg, url: link })
     } else {
         handleCopyMessage()
     }
@@ -279,11 +296,19 @@ export default function GrupoPage() {
   }
 
   // --- RENDERS ---
-
   if (!isMounted) return null
 
   if (isLoadingGroup) {
-    return <div className="container"><div className="card grupo-card"><div className="loading-state"><div className="spinner"></div><p>Carregando...</p></div></div></div>
+    return (
+      <div className="container">
+        <div className="card grupo-card">
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Carregando...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -321,7 +346,7 @@ export default function GrupoPage() {
           )}
         </div>
 
-        {/* INFO GRUPO + BOTÕES DE AÇÃO */}
+        {/* INFO GRUPO */}
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
@@ -330,7 +355,6 @@ export default function GrupoPage() {
               {!isUserMember ? (
                 'Para entrar, informe seu Instagram:'
               ) : (
-                // ✅ BOTÕES LIMPOS COM FUNDO CINZA ESCURO
                 <div style={{display:'flex', gap:10, justifyContent:'center', marginTop:15}}>
                    <button 
                       onClick={handleCopyMessage} 
@@ -371,9 +395,7 @@ export default function GrupoPage() {
           </div>
         </div>
 
-        {/* ================================================================= */}
         {/* LOGIN EMBUTIDO */}
-        {/* ================================================================= */}
         {!userProfile && (
             <div className="login-embedded-container" style={{ marginBottom: 20 }}>
                 <div className="input-group" style={{ position: 'relative' }}>
@@ -390,7 +412,6 @@ export default function GrupoPage() {
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:12, width:20, height:20}}></div>
                         )}
                     </div>
-                    {/* RESULTADOS DA BUSCA */}
                     {searchResults.length > 0 && (
                         <div className="search-results-dropdown" style={{ 
                             position: 'absolute', 
@@ -447,11 +468,9 @@ export default function GrupoPage() {
           </div>
         )}
 
-{/* ARENA E STATS */}
+        {/* ARENA E STATS */}
         {isUserMember && profiles.length > 0 && (
           <div className="profiles-container">
-            
-            {/* ✅ ESTATÍSTICAS UNIFICADAS (Padding Aumentado) */}
             <div className="total-stats-mobile" style={{
               marginBottom: '20px',
               padding: '25px 35px', 
@@ -460,63 +479,17 @@ export default function GrupoPage() {
               alignItems: 'center',
               height: 'auto'
             }}>
-              
-              {/* BLOCO MEMBROS (Sem emoji, Label acima) */}
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center' 
-              }}>
-                <div 
-                  className="total-label-mobile" 
-                  style={{ marginBottom: '9px', fontSize: '15px' }}
-                >
-                  membros
-                </div>
-                <div 
-                  className="total-number-mobile" 
-                  style={{ fontSize: '30px' }}
-                >
-                  {profiles.length}
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="total-label-mobile" style={{ marginBottom: '9px', fontSize: '15px' }}>membros</div>
+                <div className="total-number-mobile" style={{ fontSize: '30px' }}>{profiles.length}</div>
               </div>
-
-              {/* Divisória sutil */}
-              <div style={{ 
-                width: '1px', 
-                height: '30px', 
-                background: 'rgba(255,255,255,0.1)' 
-              }}></div>
-
-              {/* BLOCO SEGUIDORES (Com emoji 📊, Label acima) */}
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center' 
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '9px', 
-                  marginBottom: '9px'
-                }}>
-                  <div 
-                    className="total-label-mobile" 
-                    style={{ fontSize: '15px' }}
-                  >
-                    seguidores total
-                  </div>
+              <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }}></div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '9px'}}>
+                  <div className="total-label-mobile" style={{ fontSize: '15px' }}>seguidores total</div>
                 </div>
-                <div 
-                  className="total-number-mobile" 
-                  style={{ fontSize: '30px' }}
-                >
-                  {formatNumber(getTotalFollowers())}
-                </div>
+                <div className="total-number-mobile" style={{ fontSize: '30px' }}>{formatNumber(getTotalFollowers())}</div>
               </div>
-
             </div>
             <ProfilesArena 
               profiles={profiles}
@@ -555,40 +528,26 @@ interface ProfilesArenaProps {
   isUserMember: boolean
 }
 
-function ProfilesArena({ 
-  profiles, 
-  onImageError, 
-  onProfileClick,
-  creatorUsername,
-  currentUsername,
-  isUserMember
-}: ProfilesArenaProps) {
+function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername }: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
 
   const updatePosition = (username: string, position: { x: number; y: number }) => {
-    setPositions(prev => ({
-      ...prev,
-      [username]: position
-    }))
+    setPositions(prev => ({ ...prev, [username]: position }))
   }
 
   return (
     <div className="profiles-arena">
-      {profiles.map((profile) => {
-        const isAdmin = profile.isCreator || false
-        
-        return (
-          <MovingProfile 
-            key={profile.username}
-            profile={profile}
-            onImageError={onImageError}
-            onProfileClick={onProfileClick}
-            allPositions={positions}
-            updatePosition={updatePosition}
-            isAdmin={isAdmin}
-          />
-        )
-      })}
+      {profiles.map((profile) => (
+        <MovingProfile 
+          key={profile.username}
+          profile={profile}
+          onImageError={onImageError}
+          onProfileClick={onProfileClick}
+          allPositions={positions}
+          updatePosition={updatePosition}
+          isAdmin={profile.isCreator || false}
+        />
+      ))}
     </div>
   )
 }
@@ -602,14 +561,7 @@ interface MovingProfileProps {
   isAdmin: boolean
 }
 
-function MovingProfile({ 
-  profile, 
-  onImageError, 
-  onProfileClick, 
-  allPositions, 
-  updatePosition, 
-  isAdmin
-}: MovingProfileProps) {
+function MovingProfile({ profile, onImageError, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -623,83 +575,50 @@ function MovingProfile({
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 50
     const MAX_SIZE = 120
-    
     if (followers <= 1000) return MIN_SIZE
     if (followers >= 1000000) return MAX_SIZE
-    
     const logMin = Math.log10(1000)
     const logMax = Math.log10(1000000)
     const logCurrent = Math.log10(followers)
-    
     const percentage = (logCurrent - logMin) / (logMax - logMin)
     return MIN_SIZE + (MAX_SIZE - MIN_SIZE) * percentage
   }
 
   const imageSize = calculateImageSize(profile.followers)
 
-  const checkCollision = (
-    pos1: { x: number; y: number }, 
-    pos2: { x: number; y: number }, 
-    size1: number, 
-    size2: number
-  ): boolean => {
+  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
     const dx = pos1.x - pos2.x
     const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
-    const minDistance = (size1 + size2) / 2
-    return distance < minDistance
+    return distance < (size1 + size2) / 2
   }
 
-  const resolveCollision = (
-    myPos: { x: number; y: number }, 
-    otherPos: { x: number; y: number }, 
-    myVel: { x: number; y: number }
-  ): { x: number; y: number } => {
+  const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
     const dx = myPos.x - otherPos.x
     const dy = myPos.y - otherPos.y
     const distance = Math.sqrt(dx * dx + dy * dy)
-    
     if (distance === 0) return myVel
-
     const nx = dx / distance
     const ny = dy / distance
     const dotProduct = myVel.x * nx + myVel.y * ny
-    
-    return {
-      x: myVel.x - 2 * dotProduct * nx,
-      y: myVel.y - 2 * dotProduct * ny
-    }
+    return { x: myVel.x - 2 * dotProduct * nx, y: myVel.y - 2 * dotProduct * ny }
   }
 
   useEffect(() => {
     if (!containerRef.current) return
-
     const arena = containerRef.current.parentElement
     if (!arena) return
-    
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
       const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
       const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
-      
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY })
-
-      let speed;
-      if (profile.isVerified) {
-        speed = 1.5 + Math.random() * 1.5; 
-      } else {
-        speed = 1.0 + Math.random() * 1.4;
-      }
-
+      const speed = profile.isVerified ? (1.5 + Math.random() * 1.5) : (1.0 + Math.random() * 1.4)
       const angle = Math.random() * Math.PI * 2
-      velocityRef.current = {
-        x: Math.cos(angle) * speed,
-        y: Math.sin(angle) * speed
-      }
-      
+      velocityRef.current = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }
       isInitializedRef.current = true
     }
 
@@ -708,32 +627,25 @@ function MovingProfile({
         animationRef.current = requestAnimationFrame(animate)
         return
       }
-
       setPosition(prev => {
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
-
         if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.x *= -1
           newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
         }
-
         if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
           velocityRef.current.y *= -1
           newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
-
         const newPos = { x: newX, y: newY }
-
         Object.entries(allPositions).forEach(([username, otherPos]) => {
           if (username !== profile.username && otherPos) {
             if (checkCollision(newPos, otherPos, imageSize, imageSize)) {
               velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
-              
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
-              
               if (distance > 0) {
                 const pushDistance = (imageSize - distance) / 2
                 newPos.x += (dx / distance) * pushDistance
@@ -742,40 +654,29 @@ function MovingProfile({
             }
           }
         })
-
         updatePosition(profile.username, newPos)
         return newPos
       })
-
       animationRef.current = requestAnimationFrame(animate)
     }
-
     animationRef.current = requestAnimationFrame(animate)
-
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-      }
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
     }
   }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
-
     const arena = containerRef.current.parentElement
     if (!arena) return
-
     const arenaWidth = arena.offsetWidth
     const tooltipHeight = 80
     const tooltipWidth = 150
-
     let vertical = 'top'
     let horizontal = 'center'
-
     if (position.y < tooltipHeight) vertical = 'bottom'
     if (position.x < tooltipWidth / 2) horizontal = 'left'
     else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
-
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
 
@@ -794,44 +695,15 @@ function MovingProfile({
   }
 
   return (
-    <div 
-      ref={containerRef}
-      className="profile-pic-container"
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        width: `${imageSize}px`,
-        height: `${imageSize}px`,
-        position: 'absolute'
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+    <div ref={containerRef} className="profile-pic-container" style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${imageSize}px`, height: `${imageSize}px`, position: 'absolute' }} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
       {isAdmin && <div className="admin-crown">👑</div>}
-      
       {isHovered && (
         <div className={getTooltipClass()} style={{zIndex: 999}}>
-          <div className="profile-username">
-            @{profile.username}
-            {isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '6px'}}>ADM</span>}
-          </div>
-          <div className="profile-followers">
-            {formatNumber(profile.followers)} seguidores
-          </div>
+          <div className="profile-username">@{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '6px'}}>ADM</span>}</div>
+          <div className="profile-followers">{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
-      
-      <img 
-        src={profile.profilePic}
-        alt={profile.username}
-        className="profile-pic"
-        onError={(e) => onImageError(e, profile.username)}
-        onClick={(e) => {
-          e.stopPropagation()
-          onProfileClick(profile)
-        }}
-        loading="lazy"
-      />
+      <img src={profile.profilePic} alt={profile.username} className="profile-pic" onError={(e) => onImageError(e, profile.username)} onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} loading="lazy" />
     </div>
   )
 }
@@ -865,55 +737,23 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-content">
         <button className="modal-close" onClick={onClose}>×</button>
-
         <div className="modal-header-compact">
-          <img 
-            src={profile.profilePic}
-            alt={profile.username}
-            className="modal-profile-pic-small"
-            onError={(e) => onImageError(e, profile.username)}
-          />
+          <img src={profile.profilePic} alt={profile.username} className="modal-profile-pic-small" onError={(e) => onImageError(e, profile.username)} />
           <div className="modal-user-info">
-            <div className="modal-username">
-              @{profile.username}
-              {profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}
-            </div>
+            <div className="modal-username">@{profile.username}{profile.isCreator && <span style={{marginLeft: '5px'}}>👑</span>}</div>
             <div className="modal-fullname">{profile.fullName || profile.username}</div>
           </div>
         </div>
-
         <div className="modal-stats">
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.posts || 0)}</div>
-            <div className="stat-label">Posts</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.followers || 0)}</div>
-            <div className="stat-label">Seguidores</div>
-          </div>
-          <div className="stat-item">
-            <div className="stat-number">{formatNumber(profile.following || 0)}</div>
-            <div className="stat-label">Seguindo</div>
-          </div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.posts || 0)}</div><div className="stat-label">Posts</div></div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.followers || 0)}</div><div className="stat-label">Seguidores</div></div>
+          <div className="stat-item"><div className="stat-number">{formatNumber(profile.following || 0)}</div><div className="stat-label">Seguindo</div></div>
         </div>
-
         <div className="modal-bio-section">
           <div className="modal-bio-label">Biografia</div>
-          {profile.biography ? (
-            <div className="modal-bio-text">{profile.biography}</div>
-          ) : (
-            <div className="modal-bio-empty">Nenhuma biografia disponível</div>
-          )}
+          {profile.biography ? <div className="modal-bio-text">{profile.biography}</div> : <div className="modal-bio-empty">Nenhuma biografia disponível</div>}
         </div>
-
-        <a 
-          href={`https://www.instagram.com/${profile.username}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="modal-link-btn"
-        >
-          📸 Ver no Instagram
-        </a>
+        <a href={`https://www.instagram.com/${profile.username}`} target="_blank" rel="noopener noreferrer" className="modal-link-btn">📸 Ver no Instagram</a>
       </div>
     </div>
   )

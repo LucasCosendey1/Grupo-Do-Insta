@@ -89,9 +89,11 @@ export default function EntrarGrupoPage() {
 
   // ✅ FUNÇÃO BLINDADA PARA EXTRAIR ID
   const extractGroupId = (input: string): string | null => {
-    const idPattern = /(G-\d+-[a-zA-Z0-9]+)/i
-    const match = input.match(idPattern)
-    if (match) return match[1] 
+    const slugPattern = /([a-z0-9]{4,6}-[a-z0-9-]+)/i
+    const slugMatch = input.match(slugPattern)
+    if (slugMatch) return slugMatch[1]
+
+    
 
     if (input.includes('/grupo/')) {
       const parts = input.split('/grupo/')

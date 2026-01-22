@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import './globals.css'
@@ -15,6 +15,7 @@ interface UserProfile {
 
 interface Group {
   id: string
+  slug?: string
   name: string
   icon: {
     emoji: string
@@ -29,32 +30,50 @@ export default function Home() {
   const router = useRouter()
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [userGroups, setUserGroups] = useState<Group[]>([])
+  
+  // Estados de UI
   const [isLoading, setIsLoading] = useState(true)
+  const [isActionLoading, setIsActionLoading] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [showCopiedMessage, setShowCopiedMessage] = useState<string | null>(null)
+  
+  // ✨ NOVO: Estado para controlar qual grupo está mostrando "Copiado!"
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null)
+
+  // ✨ NOVO: Estado para o Modal de Sair (guarda o grupo que o usuário quer sair)
+  const [leaveModalGroup, setLeaveModalGroup] = useState<Group | null>(null)
+  
+  // Estados de Edição
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [newGroupName, setNewGroupName] = useState('')
-  const menuRef = useRef<HTMLDivElement>(null)
 
-  // ✅ Busca garantida sem cache
+  const getGroupIdentifier = (group: Group): string => {
+    return group.slug || group.id
+  }
+
+  // Detecção de clique fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.group-menu-container')) {
+        setOpenMenuId(null)
+        // Se clicar fora, também resetamos o estado de "copiado" imediatamente
+        setCopiedGroupId(null) 
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   const loadUserGroups = useCallback(async (username: string) => {
     try {
-      setIsLoading(true)
-      console.log('🔍 Buscando grupos atualizados...')
-      
       const timestamp = new Date().getTime()
-      
       const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&_t=${timestamp}`, {
         cache: 'no-store',
-        headers: {
-          'Pragma': 'no-cache',
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
-        }
+        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache, no-store, must-revalidate' }
       })
       
       if (response.ok) {
         const data = await response.json()
-        
         if (data.success && data.groups) {
           setUserGroups(data.groups)
           localStorage.setItem('groups', JSON.stringify(data.groups))
@@ -66,7 +85,7 @@ export default function Home() {
         setUserGroups([]) 
       }
     } catch (error) {
-      console.error('❌ Erro de rede:', error)
+      console.error('❌ Erro:', error)
       setUserGroups([])
     } finally {
       setIsLoading(false)
@@ -88,17 +107,6 @@ export default function Home() {
     }
   }, [loadUserGroups])
 
-  // Fechar menu ao clicar fora
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpenMenuId(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
   const handleLogout = () => {
     localStorage.removeItem('userProfile')
     localStorage.removeItem('groups')
@@ -106,71 +114,97 @@ export default function Home() {
     setUserGroups([])
   }
 
-  // ✅ COMPARTILHAR GRUPO
-  const handleShareGroup = (groupId: string, groupName: string, memberCount: number) => {
-    const link = `${window.location.origin}/grupo/${groupId}`
-    const message = `🚀 Olá! Entre no meu grupo "${groupName}" no Instagram!\n\n${link}\n\n👥 Já somos ${memberCount} ${memberCount === 1 ? 'membro' : 'membros'}!`
+  // ✅ COMPARTILHAR - Lógica Melhorada
+  const handleShareGroup = (group: Group) => {
+    const identifier = getGroupIdentifier(group)
+    const link = `${window.location.origin}/grupo/${identifier}`
+    const message = `🚀 Olá! Entre no meu grupo "${group.name}" no Instagram!\n\n${link}\n\n👥 Já somos ${group.memberCount} membros!`
     
     navigator.clipboard.writeText(message).then(() => {
-        setShowCopiedMessage(groupId)
-        setTimeout(() => setShowCopiedMessage(null), 3000)
-        setOpenMenuId(null)
-    }).catch(err => {
+        // ✨ AQUI ESTÁ A MÁGICA:
+        // 1. Define que este grupo foi copiado (isso vai esconder os botões no render)
+        setCopiedGroupId(identifier)
+
+        // 2. Espera 2 segundos mostrando a mensagem de sucesso e fecha tudo
+        setTimeout(() => {
+          setCopiedGroupId(null)
+          setOpenMenuId(null)
+        }, 2000)
+    }).catch(() => {
         alert('Erro ao copiar link')
     })
   }
 
-  // ✅ SAIR DO GRUPO
-  const handleLeaveGroup = async (groupId: string, groupName: string) => {
-    if (!userProfile) return
-    setOpenMenuId(null)
-    if (!window.confirm(`Tem certeza que deseja sair do grupo "${groupName}"?`)) return
+  // ✅ 1. ABRIR MODAL DE SAIR (Apenas abre o modal, não sai ainda)
+  const openLeaveModal = (group: Group) => {
+    setOpenMenuId(null) // Fecha o menu
+    setLeaveModalGroup(group) // Abre o modal para este grupo
+  }
+
+  // ✅ 2. CONFIRMAR SAÍDA (Ação real chamada pelo Modal)
+  const confirmLeaveGroup = async () => {
+    if (!userProfile || !leaveModalGroup) return
+    
+    const group = leaveModalGroup
+    const identifier = getGroupIdentifier(group)
 
     try {
+      setIsActionLoading(true)
       const response = await fetch('/api/grupos/sair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: groupId, username: userProfile.username })
+        body: JSON.stringify({ groupId: identifier, username: userProfile.username })
       })
 
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Erro ao sair')
 
-
-      loadUserGroups(userProfile.username)
+      setUserGroups(prev => prev.filter(g => getGroupIdentifier(g) !== identifier))
+      await loadUserGroups(userProfile.username)
+      
+      // Fecha o modal após sucesso
+      setLeaveModalGroup(null)
+      
     } catch (error) {
       alert('Erro ao sair do grupo.')
+    } finally {
+      setIsActionLoading(false)
     }
   }
 
-  // ✅ EDITAR NOME DO GRUPO (ADM)
-  const handleStartEditName = (groupId: string, currentName: string) => {
-    setEditingGroupId(groupId)
-    setNewGroupName(currentName)
+  const handleStartEditName = (group: Group) => {
+    const identifier = getGroupIdentifier(group)
+    setEditingGroupId(identifier)
+    setNewGroupName(group.name)
     setOpenMenuId(null)
   }
 
-  const handleSaveGroupName = async (groupId: string) => {
+  const handleSaveGroupName = async (group: Group) => {
     if (!newGroupName.trim()) {
-      alert('Digite um nome para o grupo')
+      alert('Digite um nome')
       return
     }
+    const identifier = getGroupIdentifier(group)
+    setIsActionLoading(true)
 
     try {
       const response = await fetch('/api/grupos/editar-nome', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: groupId, newName: newGroupName.trim() })
+        body: JSON.stringify({ groupId: identifier, newName: newGroupName.trim() })
       })
 
-      if (!response.ok) throw new Error('Erro ao editar nome')
+      if (!response.ok) throw new Error('Erro ao editar')
 
-      alert('✅ Nome do grupo atualizado!')
-      setUserGroups(prev => prev.map(g => g.id === groupId ? { ...g, name: newGroupName.trim() } : g))
+      setUserGroups(prev => prev.map(g => 
+        getGroupIdentifier(g) === identifier ? { ...g, name: newGroupName.trim() } : g
+      ))
       setEditingGroupId(null)
       setNewGroupName('')
     } catch (error) {
       alert('Erro ao editar nome')
+    } finally {
+      setIsActionLoading(false)
     }
   }
 
@@ -186,6 +220,57 @@ export default function Home() {
 
   return (
     <div className="container">
+      {/* ✨ MODAL PERSONALIZADO DE SAIR DO GRUPO */}
+      {leaveModalGroup && (
+        <div className="modal-overlay" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(5px)'
+        }}>
+          <div className="modal-content" style={{
+            backgroundColor: 'var(--card-bg, #1a1a1a)', 
+            padding: '24px', 
+            borderRadius: '16px',
+            maxWidth: '90%', 
+            width: '320px',
+            textAlign: 'center',
+            boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+            border: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <div style={{ fontSize: '40px', marginBottom: '16px' }}>😢</div>
+            <h3 style={{ margin: '0 0 8px 0', color: '#fff' }}>Sair do grupo?</h3>
+            <p style={{ color: '#aaa', fontSize: '14px', marginBottom: '24px' }}>
+              Tem certeza que deseja sair do grupo <strong>{leaveModalGroup.name}</strong>? Você precisará ser convidado novamente para voltar.
+            </p>
+            
+            <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+              <button 
+                onClick={confirmLeaveGroup}
+                disabled={isActionLoading}
+                style={{
+                  backgroundColor: '#ff4444', color: 'white', border: 'none',
+                  padding: '12px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer',
+                  opacity: isActionLoading ? 0.7 : 1
+                }}
+              >
+                {isActionLoading ? 'Saindo...' : 'Sim, quero sair'}
+              </button>
+              <button 
+                onClick={() => setLeaveModalGroup(null)}
+                disabled={isActionLoading}
+                style={{
+                  backgroundColor: 'transparent', color: '#fff', border: '1px solid #333',
+                  padding: '12px', borderRadius: '8px', fontWeight: '500', cursor: 'pointer'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         {/* Header Actions */}
         <div className="user-header-actions">
@@ -209,8 +294,7 @@ export default function Home() {
 
         <div className="welcome-content">
           {!userProfile ? (
-            // ❌ LOGIN PROMPT
-            <>
+             <>
               <div className="features-grid">
                 <div className="feature-card"><h3>👥 Crie Grupos</h3><p>Monte grupos personalizados.</p></div>
                 <div className="feature-card"><h3>📊 Métricas</h3><p>Acompanhe o crescimento.</p></div>
@@ -221,7 +305,6 @@ export default function Home() {
               </div>
             </>
           ) : (
-            // ✅ DASHBOARD
             <>
               <div className="action-hero">
                 <Link href="/criar-grupo" className="btn btn-primary btn-hero"><span>➕ Criar Novo Grupo</span></Link>
@@ -235,104 +318,134 @@ export default function Home() {
                   <div className="loading-state"><div className="mini-spinner"></div><p>Carregando...</p></div>
                 ) : userGroups.length > 0 ? (
                   <div className="groups-grid">
-                    {userGroups.map((group) => (
-                      <div key={group.id} className="group-card-wrapper">
-                        {editingGroupId === group.id ? (
-                          // MODO EDIÇÃO
-                          <div className="group-card-editing">
-                             {/* ... (mantido igual ao anterior) ... */}
-                            <div className="edit-name-form">
-                              <input 
-                                type="text" value={newGroupName} 
-                                onChange={(e) => setNewGroupName(e.target.value)} 
-                                className="input-edit-name" autoFocus 
-                              />
-                              <div className="edit-actions">
-                                <button className="btn-save-edit" onClick={() => handleSaveGroupName(group.id)}>✓</button>
-                                <button className="btn-cancel-edit" onClick={handleCancelEdit}>×</button>
+                    {userGroups.map((group) => {
+                      const identifier = getGroupIdentifier(group)
+                      const isEditing = editingGroupId === identifier
+                      // Verifica se este é o grupo onde o link foi copiado
+                      const isCopied = copiedGroupId === identifier
+                      
+                      return (
+                        <div key={identifier} className="group-card-wrapper">
+                          {isEditing ? (
+                            <div className="group-card-editing">
+                              <div className="edit-name-form">
+                                <input 
+                                  type="text" 
+                                  value={newGroupName} 
+                                  onChange={(e) => setNewGroupName(e.target.value)} 
+                                  className="input-edit-name" 
+                                  autoFocus 
+                                  disabled={isActionLoading}
+                                />
+                                <div className="edit-actions">
+                                  <button className="btn-save-edit" onClick={() => handleSaveGroupName(group)} disabled={isActionLoading}>✓</button>
+                                  <button className="btn-cancel-edit" onClick={handleCancelEdit} disabled={isActionLoading}>×</button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          // MODO VISUALIZAÇÃO
-                          <>
-                            <Link href={`/grupo/${group.id}`} className="group-card">
-                              <div className="group-icon-large">{group.icon?.emoji || '📁'}</div>
-                              <div className="group-card-info">
-                                <h3 className="group-card-name">{group.name}</h3>
-                                <p className="group-card-members">👥 {group.memberCount} membros</p>
-                              </div>
-                              <div className="group-card-arrow">→</div>
-                            </Link>
+                          ) : (
+                            <>
+                              <Link href={`/grupo/${identifier}`} className="group-card">
+                                <div className="group-icon-large">{group.icon?.emoji || '📁'}</div>
+                                <div className="group-card-info">
+                                  <h3 className="group-card-name">{group.name}</h3>
+                                  <p className="group-card-members">👥 {group.memberCount} membros</p>
+                                </div>
+                                <div className="group-card-arrow">→</div>
+                              </Link>
 
-                            {/* ✅ MENU 3 PONTINHOS (VOLTOU AO ORIGINAL + MENU PRA CIMA) */}
-                            <div className="group-menu-container" ref={menuRef}>
-                              <button
-                                className="btn-group-menu"
-                                onClick={(e) => {
-                                  e.preventDefault(); e.stopPropagation();
-                                  setOpenMenuId(openMenuId === group.id ? null : group.id)
-                                }}
-                              >
-                                ⋮
-                              </button>
+                              <div className="group-menu-container">
+                                <button
+                                  className="btn-group-menu"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setOpenMenuId(openMenuId === identifier ? null : identifier)
+                                    // Reseta o estado de cópia ao abrir o menu novamente
+                                    if (openMenuId !== identifier) setCopiedGroupId(null)
+                                  }}
+                                >
+                                  ⋮
+                                </button>
 
-                              {openMenuId === group.id && (
-                                <div 
+                                {openMenuId === identifier && (
+                                  <div 
                                     className="group-dropdown-menu" 
-                                    // AJUSTES DE ESTILO AQUI
                                     style={{ 
-                                        bottom: '100%', // Abre para cima
+                                        bottom: '100%',
                                         top: 'auto', 
                                         right: 0,
-                                        marginBottom: '10px', // O ESPAÇO QUE VOCÊ PEDIU
+                                        marginBottom: '10px',
                                         zIndex: 100,
                                         boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
-                                        padding: '8px 0' // Espaço interno para os botões não ficarem colados na borda
-                                    }}
-                                >
-                                  {showCopiedMessage === group.id && (
-                                    <div className="copy-success-badge">✓ Copiado!</div>
-                                  )}
-                                  
-                                  <button
-                                    className="menu-item menu-item-share"
-                                    onClick={(e) => {
-                                      e.preventDefault(); e.stopPropagation();
-                                      handleShareGroup(group.id, group.name, group.memberCount)
+                                        padding: '8px 0',
+                                        minWidth: '150px'
                                     }}
                                   >
-                                    <span className="menu-icon">🔗</span> Compartilhar
-                                  </button>
+                                    {/* ✨ LÓGICA DE EXIBIÇÃO: Se copiou, esconde botões e mostra sucesso */}
+                                    {isCopied ? (
+                                      <div style={{ 
+                                        padding: '12px', 
+                                        textAlign: 'center', 
+                                        color: '#4ade80', 
+                                        fontWeight: 'bold',
+                                        fontSize: '14px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '8px'
+                                      }}>
+                                        <span>Link Copiado!</span>
+                                        <span>✅</span>
+                                      </div>
+                                    ) : (
+                                      /* Lista Normal de Botões */
+                                      <>
+                                        <button
+                                          className="menu-item menu-item-share"
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            handleShareGroup(group)
+                                          }}
+                                        >
+                                          <span className="menu-icon">🔗</span> Compartilhar
+                                        </button>
 
-                                  {isGroupAdmin(group) && (
-                                    <button
-                                      className="menu-item menu-item-edit"
-                                      onClick={(e) => {
-                                        e.preventDefault(); e.stopPropagation();
-                                        handleStartEditName(group.id, group.name)
-                                      }}
-                                    >
-                                      <span className="menu-icon">✏️</span> Editar Nome
-                                    </button>
-                                  )}
+                                        {isGroupAdmin(group) && (
+                                          <button
+                                            className="menu-item menu-item-edit"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                              e.stopPropagation()
+                                              handleStartEditName(group)
+                                            }}
+                                          >
+                                            <span className="menu-icon">✏️</span> Editar Nome
+                                          </button>
+                                        )}
 
-                                  <button
-                                    className="menu-item menu-item-leave"
-                                    onClick={(e) => {
-                                      e.preventDefault(); e.stopPropagation();
-                                      handleLeaveGroup(group.id, group.name)
-                                    }}
-                                  >
-                                    <span className="menu-icon">🚪</span> Sair
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
+                                        <button
+                                          className="menu-item menu-item-leave"
+                                          disabled={isActionLoading}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            openLeaveModal(group) // Abre o modal em vez de confirm()
+                                          }}
+                                        >
+                                          <span className="menu-icon">🚪</span> Sair
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="empty-state"><p>Você não está em nenhum grupo</p></div>

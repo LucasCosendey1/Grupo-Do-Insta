@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "migrate-slugs": "node scripts/migrate-to-slugs.js",
     "start": "next start",
     "lint": "next lint",
         "fase1": "node scripts/fase1-atualizar-usuarios.js",

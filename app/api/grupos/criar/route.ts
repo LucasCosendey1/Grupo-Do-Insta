@@ -1,20 +1,20 @@
-// app/api/grupos/criar/route.ts (VERSÃO ATUALIZADA)
+// app/api/grupos/criar/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 import { getOrRefreshUser } from '@/lib/sync-instagram-data'
+import { generateUniqueSlug } from '@/lib/slug-utils'
 
 export async function POST(request: NextRequest) {
   try {
     const { name, icon, creatorUsername } = await request.json()
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🚀 CRIAR GRUPO - VERSÃO ATUALIZADA')
+    console.log('🚀 CRIAR GRUPO COM SLUG')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('📦 Nome do grupo:', name)
+    console.log('📦 Nome:', name)
     console.log('👤 Criador:', creatorUsername)
-    console.log('')
 
-    // Validação básica
+    // Validação
     if (!name || !creatorUsername) {
       return NextResponse.json(
         { error: 'Nome e criador são obrigatórios' },
@@ -22,66 +22,61 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ✅ NOVO: Buscar dados do criador do BANCO (com auto-refresh 24h)
+    // Buscar dados do criador
     console.log('🔍 Buscando dados do criador no banco...')
     const creatorData = await getOrRefreshUser(creatorUsername)
-
+    
     if (!creatorData) {
       console.error('❌ Criador não encontrado no banco')
       return NextResponse.json(
-        { 
-          error: 'Usuário não encontrado. Faça login primeiro.',
-          hint: 'O usuário precisa ter feito login pelo menos uma vez'
-        },
+        { error: 'Usuário não encontrado. Faça login primeiro.' },
         { status: 404 }
       )
     }
 
     console.log('✅ Dados do criador obtidos:')
     console.log('   - Username:', creatorData.username)
-    console.log('   - Nome:', creatorData.full_name)
     console.log('   - Foto:', creatorData.profile_pic ? 'SIM ✅' : 'NÃO ❌')
-    console.log('   - Seguidores:', creatorData.followers)
-    console.log('   - Último login:', creatorData.last_login)
     console.log('')
 
-    // Gerar ID único
-    const groupId = `G-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-    console.log('🆔 ID do grupo gerado:', groupId)
+    // ✨ GERAR SLUG ÚNICO
+    console.log('🔗 Gerando slug único...')
+    const slug = await generateUniqueSlug(
+      name,
+      async (testSlug) => {
+        const result = await sql`SELECT id FROM grupos WHERE slug = ${testSlug}`
+        return result.rows.length > 0
+      }
+    )
+    
+    console.log('✅ Slug gerado:', slug)
     console.log('')
 
-    // 1. Criar grupo no banco
-    console.log('💾 Criando grupo no banco...')
+    // Inserir grupo com slug
+    console.log('💾 Inserindo grupo no banco...')
     await sql`
-      INSERT INTO grupos (id, name, icon_emoji, icon_name, creator_username)
+      INSERT INTO grupos (id, slug, name, icon_emoji, icon_name, creator_username)
       VALUES (
-        ${groupId},
+        ${slug},
+        ${slug},
         ${name},
         ${icon?.emoji || '⚡'},
         ${icon?.name || 'Raio'},
         ${creatorUsername}
       )
     `
-    console.log('✅ Grupo criado!')
+    console.log('✅ Grupo inserido!')
     console.log('')
 
-    // 2. Adicionar criador como membro usando dados do BANCO
+    // Adicionar criador como membro
     console.log('👥 Adicionando criador como membro...')
     await sql`
       INSERT INTO grupo_membros (
-        grupo_id, 
-        username,
-        full_name,
-        profile_pic,
-        followers,
-        following,
-        posts,
-        biography,
-        is_private,
-        is_verified
+        grupo_id, username, full_name, profile_pic, followers, 
+        following, posts, biography, is_private, is_verified
       )
       VALUES (
-        ${groupId},
+        ${slug},
         ${creatorData.username},
         ${creatorData.full_name || creatorData.username},
         ${creatorData.profile_pic || ''},
@@ -93,23 +88,22 @@ export async function POST(request: NextRequest) {
         ${creatorData.is_verified || false}
       )
     `
-    console.log('✅ Criador adicionado como membro!')
-    console.log('')
+    console.log('✅ Criador adicionado!')
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('🎉 GRUPO CRIADO COM SUCESSO!')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('📊 Resumo:')
-    console.log('   - ID:', groupId)
+    console.log('   - Slug:', slug)
     console.log('   - Nome:', name)
-    console.log('   - Criador:', creatorUsername)
-    console.log('   - Foto do criador:', creatorData.profile_pic ? '✅ CORRETA' : '⚠️ GENÉRICA')
+    console.log('   - URL:', `/grupo/${slug}`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('')
 
     return NextResponse.json({
       success: true,
-      groupId: groupId,
+      groupId: slug,      // ✨ Retorna slug como groupId (retrocompatibilidade)
+      slug: slug,         // ✨ Retorna slug explicitamente
       name: name,
       creator: {
         username: creatorData.username,
