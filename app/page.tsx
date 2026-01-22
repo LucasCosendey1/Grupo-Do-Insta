@@ -114,7 +114,7 @@ export default function Home() {
     setUserGroups([])
   }
 
-  // ✅ COMPARTILHAR - Lógica Melhorada
+  // ✅ COPIAR LINK - Lógica Melhorada
   const handleShareGroup = (group: Group) => {
     const identifier = getGroupIdentifier(group)
     const link = `${window.location.origin}/grupo/${identifier}`
@@ -409,7 +409,7 @@ export default function Home() {
                                             handleShareGroup(group)
                                           }}
                                         >
-                                          <span className="menu-icon">🔗</span> Compartilhar
+                                          <span className="menu-icon">🔗</span> Copiar link
                                         </button>
 
                                         {isGroupAdmin(group) && (
