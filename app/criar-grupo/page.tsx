@@ -219,7 +219,7 @@ export default function CriarGrupoPage() {
         <div className="header">
           <div className="logo">🚀</div>
           <h1>Criar Novo Grupo</h1>
-          <p className="subtitle">Configure seu grupo do Instagram</p>
+          <p className="subtitle">Configure seu grupo</p>
         </div>
 
         <div className="create-group-content">

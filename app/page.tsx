@@ -343,7 +343,7 @@ export default function Home() {
 
         <div className="header">
           <div className="logo">⚡</div>
-          <h1>Grupo do Insta</h1>
+          <h1>Insta do Grupo</h1>
           <p className="subtitle">Bem-vindo, @{userProfile?.username}!</p>
         </div>
 
