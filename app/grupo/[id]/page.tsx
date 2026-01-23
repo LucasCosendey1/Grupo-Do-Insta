@@ -949,7 +949,6 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
             padding: '14px',
             textAlign: 'center',
             minHeight: '48px',
-            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
           }}
