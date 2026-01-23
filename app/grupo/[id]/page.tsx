@@ -307,39 +307,78 @@ export default function GrupoPage() {
     <div className="container">
       <div className="card grupo-card">
         
-          {/* HEADER TOP */}
-            <div className="grupo-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                {/* 👇 BOTÃO VOLTAR SÓ APARECE SE FOR MEMBRO 👇 */}
-                {isUserMember && (
-                  <Link href="/" className="btn-back-large">
-                    <span className="back-arrow-large">←</span><span>Voltar</span>
-                  </Link>
-              )}
+      {/* HEADER TOP */}
+      <div className="grupo-header" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        width: '100%',
+        padding: '0 10px'
+      }}>
+        {/* BOTÃO VOLTAR - SÓ APARECE SE FOR MEMBRO */}
+        {isUserMember && (
+          <Link href="/" className="btn-back-large">
+            <span className="back-arrow-large">←</span><span>Voltar</span>
+          </Link>
+        )}
 
-          {isUserMember && (
-            <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
-              <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
-              {showMenu && (
-                <div className="dropdown-menu-top" style={{ top: '100%', right: 0, marginTop: '8px', zIndex: 50 }}>
-                  <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>
-                    Compartilhar {showShareOptions ? '▼' : '▶'}
-                  </button>
-                  {showShareOptions && (
-                    <div className="share-submenu">
-                        <button className="submenu-item" onClick={handleNativeShare}>Nativo</button>
-                        <button className="submenu-item" onClick={handleCopyMessage}>
-                          {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
-                        </button>
-                    </div>
-                  )}
-                  <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>🚪 Sair</button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        {/* FOTO E USERNAME DO USUÁRIO - SÓ APARECE SE FOR MEMBRO */}
+        {isUserMember && userProfile && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flex: 1,
+            justifyContent: 'center'
+          }}>
+            <img 
+              src={userProfile.profilePic}
+              alt={userProfile.username}
+              onError={(e) => handleImageError(e, userProfile.username)}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                border: '2px solid rgba(0, 191, 255, 0.5)',
+                objectFit: 'cover'
+              }}
+            />
+            <span style={{
+              fontSize: '14px',
+              color: '#00bfff',
+              fontWeight: '600'
+            }}>
+              @{userProfile.username}
+            </span>
+          </div>
+        )}
 
-        {/* INFO GRUPO */}
+        {/* MENU ⋮ - SÓ APARECE SE FOR MEMBRO */}
+        {isUserMember && (
+          <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
+            <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
+            {showMenu && (
+              <div className="dropdown-menu-top" style={{ top: '100%', right: 0, marginTop: '8px', zIndex: 50 }}>
+                <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>
+                  Compartilhar {showShareOptions ? '▼' : '▶'}
+                </button>
+                {showShareOptions && (
+                  <div className="share-submenu">
+                    <button className="submenu-item" onClick={handleNativeShare}>Nativo</button>
+                    <button className="submenu-item" onClick={handleCopyMessage}>
+                      {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
+                    </button>
+                  </div>
+                )}
+                <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>🚪 Sair</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* INFO GRUPO */}
+
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
