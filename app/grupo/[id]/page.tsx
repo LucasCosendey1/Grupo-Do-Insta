@@ -99,7 +99,7 @@ export default function GrupoPage() {
     }
   }, [])
 
-  // ✅ 3. Carregar Grupo
+  // ✅ 3. Carregar Grupo COM DEBUG
   useEffect(() => {
     if (!groupId) return
     
@@ -120,6 +120,20 @@ export default function GrupoPage() {
         if (data.success && data.group) {
           setGroupData(data.group)
           setProfiles(data.group.profiles || [])
+          
+          // 🔥 DEBUG: VERIFICAR FOTOS
+          console.log('🖼️ PERFIS CARREGADOS NA ARENA:')
+          console.log('═══════════════════════════════════')
+          data.group.profiles?.forEach((p: any) => {
+            console.log(`👤 ${p.username}:`, {
+              profilePic: p.profilePic,
+              temFoto: !!p.profilePic,
+              tamanho: p.profilePic?.length || 0,
+              isProxy: p.profilePic?.includes('/api/image-proxy'),
+              isGeneric: p.profilePic?.includes('ui-avatars.com')
+            })
+          })
+          console.log('═══════════════════════════════════')
         }
       } catch (error) {
         console.error('❌ Erro ao carregar grupo:', error)
@@ -227,16 +241,37 @@ export default function GrupoPage() {
     }
   }
 
+  // 🔥 CORRIGIDO: USA DADOS DO LOCALSTORAGE
   const handleJoinOnly = async () => {
     if (!userProfile) return
     setIsJoining(true)
+    
     try {
-        const res = await fetch(`/api/scrape?username=${userProfile.username}`)
-        const data = await res.json()
-        await handleLoginAndJoin(data)
+      // ✅ USA OS DADOS QUE JÁ ESTÃO NO ESTADO (COM A FOTO CORRETA!)
+      const profileDataCompleto = {
+        username: userProfile.username,
+        fullName: userProfile.fullName,
+        profilePic: userProfile.profilePic, // ✅ FOTO DO LOCALSTORAGE
+        followers: userProfile.followers,
+        following: 0,
+        posts: 0,
+        biography: '',
+        isPrivate: false,
+        isVerified: userProfile.isVerified
+      }
+      
+      console.log('🚀 Entrando no grupo com dados:', {
+        username: profileDataCompleto.username,
+        temFoto: !!profileDataCompleto.profilePic,
+        fotoUrl: profileDataCompleto.profilePic
+      })
+      
+      await handleLoginAndJoin(profileDataCompleto)
     } catch (e) {
-        setIsJoining(false)
-        alert('Erro ao entrar.')
+      console.error('❌ Erro ao entrar no grupo:', e)
+      alert('Erro ao entrar no grupo.')
+    } finally {
+      setIsJoining(false)
     }
   }
 
@@ -281,10 +316,21 @@ export default function GrupoPage() {
     } else {
         handleCopyMessage()
     }
-}
+  }
 
+  // 🔥 MELHORADO: handleImageError com mais debug
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
+    console.error('🔴 ERRO AO CARREGAR IMAGEM:', {
+      username,
+      srcOriginal: e.currentTarget.src,
+      erro: e.type,
+      naturalWidth: e.currentTarget.naturalWidth
+    })
+    
+    // SÓ USA GENÉRICO SE NÃO FOR JÁ GENÉRICO
+    if (!e.currentTarget.src.includes('ui-avatars.com')) {
+      e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
+    }
   }
 
   // --- RENDERS ---
@@ -307,10 +353,10 @@ export default function GrupoPage() {
     <div className="container">
       <div className="card grupo-card">
         
-      {/* HEADER TOP */}
+      {/* ✅ HEADER TOP - REMOVIDO FOTO E USERNAME */}
       <div className="grupo-header" style={{ 
         display: 'flex', 
-        justifyContent: 'space-between', 
+        justifyContent: isUserMember ? 'space-between' : 'center',
         alignItems: 'center', 
         width: '100%',
         padding: '0 10px'
@@ -322,36 +368,7 @@ export default function GrupoPage() {
           </Link>
         )}
 
-        {/* FOTO E USERNAME DO USUÁRIO - SÓ APARECE SE FOR MEMBRO */}
-        {isUserMember && userProfile && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            flex: 1,
-            justifyContent: 'center'
-          }}>
-            <img 
-              src={userProfile.profilePic}
-              alt={userProfile.username}
-              onError={(e) => handleImageError(e, userProfile.username)}
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                border: '2px solid rgba(0, 191, 255, 0.5)',
-                objectFit: 'cover'
-              }}
-            />
-            <span style={{
-              fontSize: '14px',
-              color: '#00bfff',
-              fontWeight: '600'
-            }}>
-              @{userProfile.username}
-            </span>
-          </div>
-        )}
+        {/* ❌ REMOVIDO: FOTO E USERNAME DO USUÁRIO */}
 
         {/* MENU ⋮ - SÓ APARECE SE FOR MEMBRO */}
         {isUserMember && (
@@ -378,7 +395,6 @@ export default function GrupoPage() {
       </div>
 
       {/* INFO GRUPO */}
-
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
@@ -392,21 +408,19 @@ export default function GrupoPage() {
                        Convide seus amigos e ajude o grupo a decolar! 🚀
                     </p>
                     
-                    {/* 👇 ÁREA DOS BOTÕES DE COMPARTILHAMENTO 👇 */}
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
                         
-                        {/* 1. BOTÃO CINZA APAGADO (COPIAR LINK) - AGORA À ESQUERDA E MENOR */}
                         <button 
                           onClick={handleCopyMessage} 
                           style={{
-                            background: 'rgba(255, 255, 255, 0.06)', // Mais apagado
+                            background: 'rgba(255, 255, 255, 0.06)',
                             border: '1px solid rgba(255, 255, 255, 0.08)', 
-                            color: 'rgba(255, 255, 255, 0.4)', // Texto mais apagado
-                            padding: '10px 16px', // Menor
+                            color: 'rgba(255, 255, 255, 0.4)',
+                            padding: '10px 16px',
                             borderRadius: '50px', 
-                            fontSize: '13px', // Fonte menor
+                            fontSize: '13px',
                             cursor: 'pointer',
-                            fontWeight: '500', // Peso menor
+                            fontWeight: '500',
                             transition: 'all 0.2s ease',
                             display: 'flex',
                             alignItems: 'center',
@@ -426,7 +440,6 @@ export default function GrupoPage() {
                             <span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}
                         </button>
 
-                        {/* 2. BOTÃO VERDE GRANDE (COMPARTILHAR) - AGORA NO CENTRO E DESTAQUE */}
                         <button 
                           onClick={handleNativeShare} 
                           style={{
@@ -461,7 +474,7 @@ export default function GrupoPage() {
           </div>
         </div>
 
-{/* LOGIN EMBUTIDO */}
+        {/* LOGIN EMBUTIDO */}
         {!userProfile && (
             <div className="login-embedded-container" style={{ marginBottom: 20, padding: '0 10px' }}>
                 <div className="input-group" style={{ position: 'relative' }}>
@@ -473,12 +486,11 @@ export default function GrupoPage() {
                                 paddingLeft: 35, 
                                 width: '100%', 
                                 boxSizing: 'border-box',
-                                // 👇 ESTILO NEON VERDE PERMANENTE 👇
                                 border: '1px solid #00ff88',
                                 boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)',
                                 borderRadius: '12px',
-                                outline: 'none', // Remove a borda padrão do navegador ao clicar
-                                backgroundColor: 'rgba(0, 0, 0, 0.2)', // Fundo levemente escuro para destacar o neon
+                                outline: 'none',
+                                backgroundColor: 'rgba(0, 0, 0, 0.2)',
                                 color: '#fff'
                             }}
                             placeholder="seu_usuario_insta"
@@ -808,11 +820,22 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
           <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
+      {/* 🔥 IMAGEM COM DEBUG */}
       <img 
         src={profile.profilePic} 
         alt={profile.username} 
         className="profile-pic" 
-        onError={(e) => onImageError(e, profile.username)} 
+        onError={(e) => {
+          console.error('❌ FALHA AO CARREGAR IMAGEM NA ARENA:', {
+            username: profile.username,
+            srcOriginal: e.currentTarget.src,
+            profilePicOriginal: profile.profilePic
+          })
+          onImageError(e, profile.username)
+        }}
+        onLoad={() => {
+          console.log('✅ IMAGEM CARREGADA NA ARENA:', profile.username)
+        }}
         onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
         loading="lazy"
         style={{
