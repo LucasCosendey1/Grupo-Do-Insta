@@ -1,18 +1,18 @@
 // app/api/grupos/criar/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
-import { getOrRefreshUser } from '@/lib/sync-instagram-data'
 import { generateUniqueSlug } from '@/lib/slug-utils'
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, icon, creatorUsername } = await request.json()
+    const { name, icon, creatorUsername, creatorData } = await request.json()
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('🚀 CRIAR GRUPO COM SLUG')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('📦 Nome:', name)
     console.log('👤 Criador:', creatorUsername)
+    console.log('📊 Dados do criador recebidos:', creatorData ? 'SIM ✅' : 'NÃO ❌')
 
     // Validação
     if (!name || !creatorUsername) {
@@ -22,22 +22,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Buscar dados do criador
-    console.log('🔍 Buscando dados do criador no banco...')
-    const creatorData = await getOrRefreshUser(creatorUsername)
-    
+    // 🔥 VALIDAÇÃO DOS DADOS DO CRIADOR
     if (!creatorData) {
-      console.error('❌ Criador não encontrado no banco')
+      console.error('❌ Dados do criador não foram enviados!')
       return NextResponse.json(
-        { error: 'Usuário não encontrado. Faça login primeiro.' },
-        { status: 404 }
+        { error: 'Dados do criador não fornecidos' },
+        { status: 400 }
       )
     }
 
-    console.log('✅ Dados do criador obtidos:')
+    // ✅ USA OS DADOS QUE VIERAM DO FRONTEND (NÃO BUSCA DO BANCO)
+    console.log('✅ Usando dados do frontend:')
     console.log('   - Username:', creatorData.username)
-    console.log('   - Foto:', creatorData.profile_pic ? 'SIM ✅' : 'NÃO ❌')
+    console.log('   - Nome completo:', creatorData.fullName)
+    console.log('   - Foto:', creatorData.profilePic ? 'SIM ✅' : 'NÃO ❌')
+    console.log('   - Seguidores:', creatorData.followers)
     console.log('')
+
+    // 🔥 SINCRONIZAR COM O BANCO (OPCIONAL MAS RECOMENDADO)
+    try {
+      console.log('💾 Sincronizando criador com o banco...')
+      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/usuarios/sincronizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: creatorData.username,
+          fullName: creatorData.fullName,
+          profilePic: creatorData.profilePic,
+          followers: creatorData.followers,
+          following: creatorData.following || 0,
+          posts: creatorData.posts || 0,
+          biography: creatorData.biography || '',
+          isVerified: creatorData.isVerified || false,
+          isPrivate: creatorData.isPrivate || false,
+          instagramId: creatorData.username
+        })
+      })
+      console.log('✅ Criador sincronizado no banco!')
+    } catch (syncError) {
+      console.warn('⚠️ Falha ao sincronizar criador (continuando mesmo assim):', syncError)
+    }
 
     // ✨ GERAR SLUG ÚNICO
     console.log('🔗 Gerando slug único...')
@@ -78,14 +102,14 @@ export async function POST(request: NextRequest) {
       VALUES (
         ${slug},
         ${creatorData.username},
-        ${creatorData.full_name || creatorData.username},
-        ${creatorData.profile_pic || ''},
+        ${creatorData.fullName || creatorData.username},
+        ${creatorData.profilePic || ''},
         ${creatorData.followers || 0},
         ${creatorData.following || 0},
         ${creatorData.posts || 0},
         ${creatorData.biography || ''},
-        ${creatorData.is_private || false},
-        ${creatorData.is_verified || false}
+        ${creatorData.isPrivate || false},
+        ${creatorData.isVerified || false}
       )
     `
     console.log('✅ Criador adicionado!')
@@ -102,13 +126,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      groupId: slug,      // ✨ Retorna slug como groupId (retrocompatibilidade)
-      slug: slug,         // ✨ Retorna slug explicitamente
+      groupId: slug,
+      slug: slug,
       name: name,
       creator: {
         username: creatorData.username,
-        fullName: creatorData.full_name,
-        profilePic: creatorData.profile_pic,
+        fullName: creatorData.fullName,
+        profilePic: creatorData.profilePic,
         followers: creatorData.followers
       }
     })
