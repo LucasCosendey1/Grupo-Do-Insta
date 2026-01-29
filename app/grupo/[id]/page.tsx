@@ -42,8 +42,15 @@ interface UserProfile {
   fullName: string
   profilePic: string
   followers: number
+  following: number
+  posts: number
+  biography: string
   isVerified: boolean
+  isPrivate?: boolean
 }
+
+// 👑 CONSTANTE DO ADMIN GERAL
+const ADMIN_USERNAME = 'instadogrupo.oficial'
 
 // ==========================================
 // PÁGINA PRINCIPAL
@@ -78,6 +85,9 @@ export default function GrupoPage() {
   const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = useState(false)
+
+  // 👑 VERIFICAÇÃO DE SUPER ADMIN
+  const isAdmin = userProfile?.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
 
   // 1. Validação de Rota
   useEffect(() => {
@@ -135,11 +145,14 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // 4. Verificar Membro
+  // 4. Verificar Membro (MODIFICADO PARA ADMIN)
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
       const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
-      setIsUserMember(isMember)
+      const adminViewing = userProfile.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
+      
+      // Admin sempre pode visualizar, mesmo não sendo membro
+      setIsUserMember(isMember || adminViewing)
     }
   }, [userProfile, profiles])
 
@@ -181,12 +194,16 @@ export default function GrupoPage() {
   // ==========================================
 
   const handleLoginAndJoin = async (profileData: any) => {
-    const userToSave = {
+    const userToSave: UserProfile = {
         username: profileData.username,
         fullName: profileData.fullName,
         profilePic: profileData.profilePic,
         followers: profileData.followers,
-        isVerified: profileData.isVerified
+        following: profileData.following,
+        posts: profileData.posts,
+        biography: profileData.biography,
+        isVerified: profileData.isVerified,
+        isPrivate: profileData.isPrivate
     }
     localStorage.setItem('userProfile', JSON.stringify(userToSave))
     setUserProfile(userToSave)
@@ -234,18 +251,20 @@ export default function GrupoPage() {
   const handleJoinOnly = async () => {
     if (!userProfile) return
     setIsJoining(true)
+    
     try {
       const profileDataCompleto = {
         username: userProfile.username,
         fullName: userProfile.fullName,
         profilePic: userProfile.profilePic,
         followers: userProfile.followers,
-        following: 0,
-        posts: 0,
-        biography: '',
-        isPrivate: false,
+        following: userProfile.following || 0,
+        posts: userProfile.posts || 0,
+        biography: userProfile.biography || '',
+        isPrivate: userProfile.isPrivate || false,
         isVerified: userProfile.isVerified
       }
+      
       await handleLoginAndJoin(profileDataCompleto)
     } catch (e) {
       console.error('❌ Erro ao entrar no grupo:', e)
@@ -297,7 +316,6 @@ export default function GrupoPage() {
   }
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    // SÓ USA GENÉRICO SE NÃO FOR JÁ GENÉRICO
     if (!e.currentTarget.src.includes('ui-avatars.com')) {
       e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
     }
@@ -338,8 +356,8 @@ export default function GrupoPage() {
           </Link>
         )}
 
-        {/* MENU */}
-        {isUserMember && (
+        {/* MENU (Apenas para membros reais, não admin em modo viewer) */}
+        {isUserMember && !isAdmin && (
           <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
             <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
             {showMenu && (
@@ -377,6 +395,7 @@ export default function GrupoPage() {
                     </p>
                     
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
+                        
                         <button 
                           onClick={handleCopyMessage} 
                           style={{
@@ -434,6 +453,7 @@ export default function GrupoPage() {
                         >
                               Compartilhar Grupo
                         </button>
+
                     </div>
                 </div>
               )}
@@ -503,8 +523,8 @@ export default function GrupoPage() {
             </div>
         )}
 
-        {/* BOTÃO PARTICIPAR */}
-        {userProfile && !isUserMember && (
+        {/* BOTÃO PARTICIPAR - ESCONDER PARA ADMIN */}
+        {userProfile && !isUserMember && !isAdmin && (
           <div className="join-section" style={{padding: '0 10px'}}>
              <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>
                 Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong>
@@ -522,6 +542,26 @@ export default function GrupoPage() {
              >
                 Trocar de conta
              </button>
+          </div>
+        )}
+
+        {/* 👑 AVISO PARA ADMIN */}
+        {userProfile && !isUserMember && isAdmin && (
+          <div style={{
+            padding: '20px',
+            margin: '20px 10px',
+            background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 165, 0, 0.1) 100%)',
+            border: '2px solid rgba(255, 215, 0, 0.3)',
+            borderRadius: '16px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '32px', marginBottom: '12px' }}>👑</div>
+            <h3 style={{ color: '#FFD700', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>
+              Modo Administrador
+            </h3>
+            <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '14px', lineHeight: '1.6' }}>
+              Você está visualizando este grupo como admin. Você pode ver todos os membros e estatísticas, mas não pode participar do grupo.
+            </p>
           </div>
         )}
 
@@ -655,7 +695,7 @@ function MovingProfile({
   
   // Cooldown específico para colisões com a parede
   const lastWallCollisionTime = useRef(0)
-  const WALL_COLLISION_COOLDOWN = 200 // 0.6 segundos para colisões com parede
+  const WALL_COLLISION_COOLDOWN = 200 // 0.2 segundos para colisões com parede
   
   const isInitializedRef = useRef(false)
   const BOUNDARY_PADDING = 5
@@ -794,9 +834,7 @@ function MovingProfile({
       } while (
         attempts < 50 && 
         Object.entries(allPositions || {}).some(([username, pos]) => 
-          username !== profile.username && 
-          pos && 
-          checkCollision({ x: initialX, y: initialY }, pos, imageSize, pos.size || imageSize)
+          username !== profile.username && pos && checkCollision({ x: initialX, y: initialY }, pos, imageSize, pos.size || imageSize)
         )
       )
 
@@ -998,19 +1036,10 @@ function MovingProfile({
 
       {isHovered && (
         <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
-          <div className="profile-username" style={{
-            fontSize: '13px', 
-            whiteSpace: 'nowrap', 
-            overflow: 'hidden', 
-            textOverflow: 'ellipsis', 
-            maxWidth: '140px'
-          }}>
-            @{profile.username}
-            {isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
+          <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
+            @{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
           </div>
-          <div className="profile-followers" style={{fontSize: '12px'}}>
-            {formatNumber(profile.followers)} seguidores
-          </div>
+          <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
 
