@@ -45,6 +45,10 @@ interface UserProfile {
   isVerified: boolean
 }
 
+// ==========================================
+// PÁGINA PRINCIPAL
+// ==========================================
+
 export default function GrupoPage() {
   const router = useRouter()
   const params = useParams()
@@ -75,7 +79,7 @@ export default function GrupoPage() {
   const menuRef = useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = useState(false)
 
-  // ✅ 1. Validação de Rota
+  // 1. Validação de Rota
   useEffect(() => {
     if (!groupId) {
       console.error('❌ groupId está undefined!')
@@ -84,7 +88,7 @@ export default function GrupoPage() {
     }
   }, [groupId, router])
 
-  // ✅ 2. Inicialização
+  // 2. Inicialização
   useEffect(() => {
     setIsMounted(true)
     if (typeof window !== 'undefined') {
@@ -99,7 +103,7 @@ export default function GrupoPage() {
     }
   }, [])
 
-  // ✅ 3. Carregar Grupo COM DEBUG
+  // 3. Carregar Grupo
   useEffect(() => {
     if (!groupId) return
     
@@ -120,20 +124,6 @@ export default function GrupoPage() {
         if (data.success && data.group) {
           setGroupData(data.group)
           setProfiles(data.group.profiles || [])
-          
-          // 🔥 DEBUG: VERIFICAR FOTOS
-          console.log('🖼️ PERFIS CARREGADOS NA ARENA:')
-          console.log('═══════════════════════════════════')
-          data.group.profiles?.forEach((p: any) => {
-            console.log(`👤 ${p.username}:`, {
-              profilePic: p.profilePic,
-              temFoto: !!p.profilePic,
-              tamanho: p.profilePic?.length || 0,
-              isProxy: p.profilePic?.includes('/api/image-proxy'),
-              isGeneric: p.profilePic?.includes('ui-avatars.com')
-            })
-          })
-          console.log('═══════════════════════════════════')
         }
       } catch (error) {
         console.error('❌ Erro ao carregar grupo:', error)
@@ -145,7 +135,7 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // ✅ 4. Verificar Membro
+  // 4. Verificar Membro
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
       const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
@@ -153,7 +143,7 @@ export default function GrupoPage() {
     }
   }, [userProfile, profiles])
 
-  // ✅ 5. Lógica de Busca
+  // 5. Lógica de Busca
   useEffect(() => {
     if (searchTerm.length < 2) {
       setSearchResults([])
@@ -241,17 +231,14 @@ export default function GrupoPage() {
     }
   }
 
-  // 🔥 CORRIGIDO: USA DADOS DO LOCALSTORAGE
   const handleJoinOnly = async () => {
     if (!userProfile) return
     setIsJoining(true)
-    
     try {
-      // ✅ USA OS DADOS QUE JÁ ESTÃO NO ESTADO (COM A FOTO CORRETA!)
       const profileDataCompleto = {
         username: userProfile.username,
         fullName: userProfile.fullName,
-        profilePic: userProfile.profilePic, // ✅ FOTO DO LOCALSTORAGE
+        profilePic: userProfile.profilePic,
         followers: userProfile.followers,
         following: 0,
         posts: 0,
@@ -259,13 +246,6 @@ export default function GrupoPage() {
         isPrivate: false,
         isVerified: userProfile.isVerified
       }
-      
-      console.log('🚀 Entrando no grupo com dados:', {
-        username: profileDataCompleto.username,
-        temFoto: !!profileDataCompleto.profilePic,
-        fotoUrl: profileDataCompleto.profilePic
-      })
-      
       await handleLoginAndJoin(profileDataCompleto)
     } catch (e) {
       console.error('❌ Erro ao entrar no grupo:', e)
@@ -298,7 +278,6 @@ export default function GrupoPage() {
   const handleCopyMessage = () => {
     const link = `${window.location.origin}/grupo/${groupId}`
     const msg = `🚀 Entre no meu grupo "${groupData?.name}"!\n\n${link}`
-    
     navigator.clipboard.writeText(msg)
     setCopiedType('message')
     setTimeout(() => setCopiedType(null), 2000)
@@ -308,7 +287,6 @@ export default function GrupoPage() {
     if (typeof navigator.share === 'function' && groupData) {
         const link = `${window.location.origin}/grupo/${groupId}`
         const msg = `✨ Convite Especial!\nVenha fazer parte do "${groupData.name}" 🚀\n\n👥 ${profiles.length} Membros\n📊 ${formatNumber(getTotalFollowers())} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
-        
         navigator.share({ 
             title: `Convite: ${groupData.name}`, 
             text: msg
@@ -318,15 +296,7 @@ export default function GrupoPage() {
     }
   }
 
-  // 🔥 MELHORADO: handleImageError com mais debug
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    console.error('🔴 ERRO AO CARREGAR IMAGEM:', {
-      username,
-      srcOriginal: e.currentTarget.src,
-      erro: e.type,
-      naturalWidth: e.currentTarget.naturalWidth
-    })
-    
     // SÓ USA GENÉRICO SE NÃO FOR JÁ GENÉRICO
     if (!e.currentTarget.src.includes('ui-avatars.com')) {
       e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
@@ -353,7 +323,7 @@ export default function GrupoPage() {
     <div className="container">
       <div className="card grupo-card">
         
-      {/* ✅ HEADER TOP - REMOVIDO FOTO E USERNAME */}
+      {/* HEADER TOP */}
       <div className="grupo-header" style={{ 
         display: 'flex', 
         justifyContent: isUserMember ? 'space-between' : 'center',
@@ -361,16 +331,14 @@ export default function GrupoPage() {
         width: '100%',
         padding: '0 10px'
       }}>
-        {/* BOTÃO VOLTAR - SÓ APARECE SE FOR MEMBRO */}
+        {/* BOTÃO VOLTAR */}
         {isUserMember && (
           <Link href="/" className="btn-back-large">
             <span className="back-arrow-large">←</span><span>Voltar</span>
           </Link>
         )}
 
-        {/* ❌ REMOVIDO: FOTO E USERNAME DO USUÁRIO */}
-
-        {/* MENU ⋮ - SÓ APARECE SE FOR MEMBRO */}
+        {/* MENU */}
         {isUserMember && (
           <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
             <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
@@ -409,7 +377,6 @@ export default function GrupoPage() {
                     </p>
                     
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
-                        
                         <button 
                           onClick={handleCopyMessage} 
                           style={{
@@ -465,9 +432,8 @@ export default function GrupoPage() {
                           onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
                           onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
                         >
-                             Compartilhar Grupo
+                              Compartilhar Grupo
                         </button>
-
                     </div>
                 </div>
               )}
@@ -497,7 +463,7 @@ export default function GrupoPage() {
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
-                         {isSearching && (
+                          {isSearching && (
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
                         )}
                     </div>
@@ -620,11 +586,12 @@ interface ProfilesArenaProps {
   isUserMember: boolean
 }
 
+// State armazena {x, y, size} para colisões precisas
 function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername }: ProfilesArenaProps) {
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size: number }>>({})
 
-  const updatePosition = (username: string, position: { x: number; y: number }) => {
-    setPositions(prev => ({ ...prev, [username]: position }))
+  const updatePosition = (username: string, position: { x: number; y: number }, size: number) => {
+    setPositions(prev => ({ ...prev, [username]: { ...position, size } }))
   }
 
   return (
@@ -652,26 +619,52 @@ function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername
   )
 }
 
+// ==========================================
+// MOVING PROFILE - CORRIGIDO E ROBUSTO
+// ==========================================
+
 interface MovingProfileProps {
   profile: Profile
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
-  allPositions: Record<string, { x: number; y: number }>
-  updatePosition: (username: string, position: { x: number; y: number }) => void
+  allPositions: Record<string, { x: number; y: number; size: number }>
+  updatePosition: (username: string, position: { x: number; y: number }, size: number) => void
   isAdmin: boolean
 }
 
-function MovingProfile({ profile, onImageError, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
+function MovingProfile({ 
+  profile, 
+  onImageError, 
+  onProfileClick, 
+  allPositions, 
+  updatePosition, 
+  isAdmin 
+}: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
+  
+  // Velocidade em linha reta (direção normalizada)
   const velocityRef = useRef({ x: 0, y: 0 })
+  
+  // Cooldowns individuais para cada colisão
+  const collisionCooldowns = useRef<Record<string, number>>({})
+  const COLLISION_COOLDOWN = 1000 // 1 segundo para colisões entre bolinhas
+  
+  // Cooldown específico para colisões com a parede
+  const lastWallCollisionTime = useRef(0)
+  const WALL_COLLISION_COOLDOWN = 200 // 0.6 segundos para colisões com parede
+  
   const isInitializedRef = useRef(false)
+  const BOUNDARY_PADDING = 5
 
-  const BOUNDARY_PADDING = 5 
+  // ==========================================
+  // CÁLCULOS AUXILIARES
+  // ==========================================
 
+  // Define tamanho da bolinha com base nos seguidores (Logarítmico)
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 45
     const MAX_SIZE = 100
@@ -686,24 +679,103 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 
   const imageSize = calculateImageSize(profile.followers)
 
-  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
+  // Verifica se duas bolinhas estão colidindo (Soma dos raios)
+  const checkCollision = (
+    pos1: { x: number; y: number }, 
+    pos2: { x: number; y: number }, 
+    size1: number, 
+    size2: number
+  ): boolean => {
     const dx = pos1.x - pos2.x
     const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
-    return distance < (size1 + size2) / 2
+    
+    const radius1 = size1 / 2
+    const radius2 = size2 / 2
+    // +5px de margem para evitar overlap visual
+    return distance < (radius1 + radius2) + 5
   }
 
-  const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
-    const dx = myPos.x - otherPos.x
-    const dy = myPos.y - otherPos.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    if (distance === 0) return myVel
-    const nx = dx / distance
-    const ny = dy / distance
-    const dotProduct = myVel.x * nx + myVel.y * ny
-    return { x: myVel.x - 2 * dotProduct * nx, y: myVel.y - 2 * dotProduct * ny }
+  // Encontra a melhor direção livre para "fugir" de aglomerações
+  const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
+    const arena = containerRef.current?.parentElement
+    if (!arena) return { x: 1, y: 0 }
+
+    const arenaWidth = arena.offsetWidth
+    const arenaHeight = arena.offsetHeight
+    const NUM_DIRECTIONS = 16 // Testa 16 direções radiais
+
+    let bestDirection = { x: 0, y: 0 }
+    let maxMinDistance = 0
+
+    for (let i = 0; i < NUM_DIRECTIONS; i++) {
+      const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
+      const testDirection = {
+        x: Math.cos(angle),
+        y: Math.sin(angle)
+      }
+
+      let minDistanceInDirection = Infinity
+
+      // 1. Distância até Paredes nesta direção
+      if (testDirection.x > 0) {
+         const dist = (arenaWidth - currentPos.x - imageSize) / testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.x < 0) {
+         const dist = (currentPos.x - BOUNDARY_PADDING) / -testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y > 0) {
+         const dist = (arenaHeight - currentPos.y - imageSize) / testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y < 0) {
+         const dist = (currentPos.y - BOUNDARY_PADDING) / -testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+
+      // 2. Distância até Outras Bolinhas nesta direção
+      Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+        if (username === profile.username || !otherPos) return
+
+        const dx = otherPos.x - currentPos.x
+        const dy = otherPos.y - currentPos.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        // Vetor normalizado apontando para a outra bolinha
+        const directionToOther = { x: dx / distance, y: dy / distance }
+        // Produto escalar para saber se a outra bolinha está na direção que estamos testando
+        const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
+
+        // Se estiver num cone de visão à frente (> 0.3), considera a distância
+        if (dotProduct > 0.3) {
+          minDistanceInDirection = Math.min(minDistanceInDirection, distance)
+        }
+      })
+
+      // Escolhe a direção que tem o maior espaço livre
+      if (minDistanceInDirection > maxMinDistance) {
+        maxMinDistance = minDistanceInDirection
+        bestDirection = testDirection
+      }
+    }
+
+    // Se estiver tudo bloqueado, escolhe aleatório
+    if (maxMinDistance === 0) {
+      const randomAngle = Math.random() * Math.PI * 2
+      bestDirection = {
+        x: Math.cos(randomAngle),
+        y: Math.sin(randomAngle)
+      }
+    }
+
+    return bestDirection
   }
 
+  // ==========================================
+  // INICIALIZAÇÃO
+  // ==========================================
   useEffect(() => {
     if (!containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -712,59 +784,150 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     const arenaHeight = arena.offsetHeight
 
     if (!isInitializedRef.current) {
-      const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
-      const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
+      // Tenta encontrar uma posição inicial livre de colisão
+      let initialX, initialY, attempts = 0
+      
+      do {
+        initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
+        initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - BOUNDARY_PADDING * 2)
+        attempts++
+      } while (
+        attempts < 50 && 
+        Object.entries(allPositions || {}).some(([username, pos]) => 
+          username !== profile.username && 
+          pos && 
+          checkCollision({ x: initialX, y: initialY }, pos, imageSize, pos.size || imageSize)
+        )
+      )
+
       setPosition({ x: initialX, y: initialY })
-      updatePosition(profile.username, { x: initialX, y: initialY })
-      const speed = profile.isVerified ? (1.3 + Math.random() * 1.3) : (0.9 + Math.random() * 1.2)
-      const angle = Math.random() * Math.PI * 2
-      velocityRef.current = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }
+      updatePosition(profile.username, { x: initialX, y: initialY }, imageSize)
+
+      // Define velocidade inicial
+      const baseSpeed = profile.isVerified ? 0.8 : 0.6 // Verificados são mais rápidos
+      const direction = findBestDirection({ x: initialX, y: initialY })
+      
+      velocityRef.current = {
+        x: direction.x * baseSpeed,
+        y: direction.y * baseSpeed
+      }
+
       isInitializedRef.current = true
     }
 
+    // ==========================================
+    // LOOP DE ANIMAÇÃO
+    // ==========================================
     const animate = () => {
       if (isHovered) {
         animationRef.current = requestAnimationFrame(animate)
         return
       }
+
       setPosition(prev => {
+        // 1️⃣ MOVIMENTO LINEAR
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
-        if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
-          velocityRef.current.x *= -1
-          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+
+        let needsNewDirection = false
+        const currentTime = Date.now()
+
+        // 2️⃣ COLISÃO COM PAREDES (COM COOLDOWN)
+        const timeSinceWallCollision = currentTime - lastWallCollisionTime.current
+        const canCheckWallCollision = timeSinceWallCollision > WALL_COLLISION_COOLDOWN
+
+        if (canCheckWallCollision) {
+          let hitWall = false
+          // Parede Esquerda/Direita
+          if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
+            newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          // Parede Cima/Baixo
+          if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
+            newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          
+          if (hitWall) {
+            lastWallCollisionTime.current = currentTime
+          }
+        } else {
+          // Em cooldown: Apenas mantém dentro, sem disparar mudança de direção
+          newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+          newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
-        if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
-          velocityRef.current.y *= -1
-          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
-        }
+
         const newPos = { x: newX, y: newY }
-        Object.entries(allPositions).forEach(([username, otherPos]) => {
-          if (username !== profile.username && otherPos) {
-            if (checkCollision(newPos, otherPos, imageSize, imageSize)) {
-              velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
+
+        // 3️⃣ COLISÃO COM OUTRAS BOLINHAS (COM COOLDOWN INDIVIDUAL)
+        if (!needsNewDirection) {
+          Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+            if (username === profile.username || !otherPos) return
+
+            // Pega o cooldown específico para esta bolinha
+            const lastCollision = collisionCooldowns.current[username] || 0
+            const canCollideWithThisBall = (currentTime - lastCollision) > COLLISION_COOLDOWN
+
+            // Pega o tamanho real da outra bolinha
+            const otherSize = otherPos.size || imageSize
+
+            if (checkCollision(newPos, otherPos, imageSize, otherSize)) {
+              // EMPURRÃO FÍSICO (Sempre acontece para evitar sobreposição visual)
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
+
               if (distance > 0) {
-                const pushDistance = (imageSize - distance) / 2
-                newPos.x += (dx / distance) * pushDistance
-                newPos.y += (dy / distance) * pushDistance
+                const radius1 = imageSize / 2
+                const radius2 = otherSize / 2
+                // Quanto elas estão sobrepostas?
+                const overlap = (radius1 + radius2) - distance
+
+                if (overlap > 0) {
+                    const pushDistance = overlap / 2 + 2 // Empurra metade da sobreposição + margem
+                    newPos.x += (dx / distance) * pushDistance
+                    newPos.y += (dy / distance) * pushDistance
+                }
+              }
+
+              // MUDANÇA DE DIREÇÃO (Só acontece se o cooldown permitir)
+              if (canCollideWithThisBall) {
+                  needsNewDirection = true
+                  collisionCooldowns.current[username] = currentTime // Marca cooldown para essa bolinha
               }
             }
+          })
+        }
+
+        // 4️⃣ RECALCULA DIREÇÃO (se necessário)
+        if (needsNewDirection) {
+          const baseSpeed = profile.isVerified ? 0.8 : 0.6
+          const bestDirection = findBestDirection(newPos)
+
+          velocityRef.current = {
+            x: bestDirection.x * baseSpeed,
+            y: bestDirection.y * baseSpeed
           }
-        })
-        updatePosition(profile.username, newPos)
+        }
+
+        // Atualiza posição global para que outras bolinhas saibam onde estou
+        updatePosition(profile.username, newPos, imageSize)
         return newPos
       })
+
       animationRef.current = requestAnimationFrame(animate)
     }
+
     animationRef.current = requestAnimationFrame(animate)
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
+    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
   }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
+  // ==========================================
+  // TOOLTIP INTELIGENTE (mantido igual)
+  // ==========================================
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -772,11 +935,14 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     const arenaWidth = arena.offsetWidth
     const tooltipHeight = 80
     const tooltipWidth = 150
+
     let vertical = 'top'
     let horizontal = 'center'
+
     if (position.y < tooltipHeight) vertical = 'bottom'
     if (position.x < tooltipWidth / 2) horizontal = 'left'
     else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
+
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
 
@@ -794,6 +960,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     return classes.join(' ')
   }
 
+  // ==========================================
+  // RENDER
+  // ==========================================
   return (
     <div 
       ref={containerRef} 
@@ -803,39 +972,53 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         top: `${position.y}px`, 
         width: `${imageSize}px`, 
         height: `${imageSize}px`, 
-        position: 'absolute',
-        touchAction: 'none'
+        position: 'absolute', 
+        touchAction: 'none',
+        transition: 'none' // Remove transições CSS para movimento fluido
       }} 
       onMouseEnter={() => setIsHovered(true)} 
       onMouseLeave={() => setIsHovered(false)}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
     >
-      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
-      {isHovered && (
-        <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
-          <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
-            @{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
-          </div>
-          <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
+      {isAdmin && (
+        <div 
+          className="admin-crown" 
+          style={{
+            position: 'absolute', 
+            top: '-5px', 
+            right: '-5px', 
+            fontSize: `${imageSize * 0.25}px`, 
+            zIndex: 10
+          }}
+        >
+          👑
         </div>
       )}
-      {/* 🔥 IMAGEM COM DEBUG */}
+
+      {isHovered && (
+        <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
+          <div className="profile-username" style={{
+            fontSize: '13px', 
+            whiteSpace: 'nowrap', 
+            overflow: 'hidden', 
+            textOverflow: 'ellipsis', 
+            maxWidth: '140px'
+          }}>
+            @{profile.username}
+            {isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
+          </div>
+          <div className="profile-followers" style={{fontSize: '12px'}}>
+            {formatNumber(profile.followers)} seguidores
+          </div>
+        </div>
+      )}
+
       <img 
         src={profile.profilePic} 
         alt={profile.username} 
         className="profile-pic" 
-        onError={(e) => {
-          console.error('❌ FALHA AO CARREGAR IMAGEM NA ARENA:', {
-            username: profile.username,
-            srcOriginal: e.currentTarget.src,
-            profilePicOriginal: profile.profilePic
-          })
-          onImageError(e, profile.username)
-        }}
-        onLoad={() => {
-          console.log('✅ IMAGEM CARREGADA NA ARENA:', profile.username)
-        }}
+        onError={(e) => onImageError(e, profile.username)}
         onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
         loading="lazy"
         style={{
