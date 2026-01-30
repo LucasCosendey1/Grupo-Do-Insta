@@ -7,6 +7,7 @@ import { sql } from '@vercel/postgres'
  * * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)
  */
 
+
 // ⚠️ SEGURANÇA: Só permite chamadas do Vercel Cron
 export async function GET(request: NextRequest) {
   try {
