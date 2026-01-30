@@ -4,14 +4,7 @@ import { sql } from '@vercel/postgres'
 
 /**
  * 🕐 CRON JOB: Atualizar todos os usuários
- * 
- * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)
- * 
- * O que faz:
- * 1. Busca TODOS os usuários do banco
- * 2. Para cada um, faz scrape do Instagram
- * 3. Atualiza os dados no banco
- * 4. Atualiza também nos grupos onde ele está
+ * * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)
  */
 
 // ⚠️ SEGURANÇA: Só permite chamadas do Vercel Cron
@@ -67,7 +60,8 @@ export async function GET(request: NextRequest) {
         console.log(`[${index + 1}/${totalUsuarios}] Atualizando @${username}...`)
 
         // Buscar dados do Instagram
-        const scrapeResponse = await fetch(`${getBaseUrl(request)}/api/scrape?username=${username}`)
+        const baseUrl = getBaseUrl(request)
+        const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${username}`)
         
         if (!scrapeResponse.ok) {
           throw new Error(`Scrape falhou: ${scrapeResponse.status}`)
@@ -117,13 +111,15 @@ export async function GET(request: NextRequest) {
         await new Promise(resolve => setTimeout(resolve, 2000))
 
       } catch (error) {
-        console.error(`   ❌ @${username} - Erro: ${error.message}`)
+        // ✅ CORREÇÃO 1: Tratamento de erro dentro do loop
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+        console.error(`   ❌ @${username} - Erro: ${errorMessage}`)
         
         erros++
         resultados.push({
           username,
-          success: false,
-          error: error.message
+          sucesso: false,
+          erro: errorMessage
         })
       }
     }
@@ -154,9 +150,13 @@ export async function GET(request: NextRequest) {
     console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.error(error)
 
+    // ✅ CORREÇÃO 2: O erro principal que impedia o build
+    // TypeScript não sabia se 'error' tinha a propriedade .message
+    const errorMessage = error instanceof Error ? error.message : 'Erro interno desconhecido'
+
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: errorMessage
     }, { status: 500 })
   }
 }
