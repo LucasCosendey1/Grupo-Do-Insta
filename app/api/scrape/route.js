@@ -1,9 +1,7 @@
-// 🚀 VERSÃO 3: Scraping Híbrido com Múltiplas Fontes
-// Tenta várias APIs e métodos até conseguir os dados
+// 🚀 VERSÃO CORRIGIDA - Valida URLs antes de retornar
 
-/**
- * ESTRATÉGIA 1: Instagram Web Profile Info API (requer apenas user agent mobile)
- */
+import { processInstagramImageUrl, getGenericAvatar } from '@/lib/image-utils'
+
 async function tryWebProfileAPI(username) {
   try {
     console.log('📱 [API-WEB] Tentando Web Profile API...')
@@ -19,7 +17,8 @@ async function tryWebProfileAPI(username) {
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
         'Sec-Fetch-Site': 'same-origin'
-      }
+      },
+      signal: AbortSignal.timeout(10000) // 🔥 Timeout de 10s
     })
     
     console.log('📡 [API-WEB] Status:', response.status)
@@ -34,10 +33,14 @@ async function tryWebProfileAPI(username) {
       const user = data.data.user
       console.log('✅ [API-WEB] Dados obtidos!')
       
+      // 🔥 VALIDAR URL DA FOTO
+      const rawProfilePic = user.profile_pic_url_hd || user.profile_pic_url || ''
+      console.log('📸 [API-WEB] URL da foto:', rawProfilePic ? 'SIM' : 'NÃO')
+      
       return {
         username: user.username,
         fullName: user.full_name || user.username,
-        profilePic: user.profile_pic_url_hd || user.profile_pic_url,
+        profilePic: rawProfilePic, // ✅ Vai processar depois
         followers: user.edge_followed_by?.count || 0,
         following: user.edge_follow?.count || 0,
         posts: user.edge_owner_to_timeline_media?.count || 0,
@@ -55,9 +58,6 @@ async function tryWebProfileAPI(username) {
   }
 }
 
-/**
- * ESTRATÉGIA 2: Página HTML pública (método atual)
- */
 async function tryPublicHTML(username) {
   try {
     console.log('🌐 [HTML] Tentando scraping de HTML público...')
@@ -69,7 +69,8 @@ async function tryPublicHTML(username) {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
         'Accept': 'text/html',
         'Accept-Language': 'en-US,en;q=0.9'
-      }
+      },
+      signal: AbortSignal.timeout(10000)
     })
     
     if (!response.ok) {
@@ -79,7 +80,6 @@ async function tryPublicHTML(username) {
     const html = await response.text()
     console.log('📄 [HTML] Recebido, tamanho:', html.length)
     
-    // Tentar extrair via regex direto
     const data = extractFromHTML(html, username)
     
     if (data && data.followers > 0) {
@@ -95,9 +95,6 @@ async function tryPublicHTML(username) {
   }
 }
 
-/**
- * Extrai dados diretamente do HTML
- */
 function extractFromHTML(html, username) {
   const data = {
     username,
@@ -111,7 +108,6 @@ function extractFromHTML(html, username) {
     isVerified: false
   }
   
-  // Buscar JSON embutido
   const jsonMatches = html.match(/<script type="application\/json"[^>]*>({.*?})<\/script>/gs)
   
   if (jsonMatches) {
@@ -139,7 +135,6 @@ function extractFromHTML(html, username) {
     }
   }
   
-  // Se não encontrou no JSON, buscar direto no HTML
   if (data.followers === 0) {
     const patterns = [
       /"edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)/,
@@ -196,9 +191,6 @@ function findUserInJSON(obj, depth = 0) {
   return null
 }
 
-/**
- * HANDLER PRINCIPAL - tenta todas as estratégias
- */
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const username = searchParams.get('username')
@@ -212,10 +204,8 @@ export async function GET(request) {
   }
 
   try {
-    // Tentar Estratégia 1: API Web Profile
     let userData = await tryWebProfileAPI(username)
     
-    // Tentar Estratégia 2: HTML Público
     if (!userData || userData.followers === 0) {
       console.log('⚠️ Estratégia 1 falhou, tentando estratégia 2...')
       userData = await tryPublicHTML(username)
@@ -232,16 +222,19 @@ export async function GET(request) {
       posts: userData.posts
     })
     
-    // Processar foto com proxy
-    const profilePicUrl = userData.profilePic ? userData.profilePic.replace(/&amp;/g, '&') : ''
-    const proxiedImageUrl = profilePicUrl 
-      ? `/api/image-proxy?url=${encodeURIComponent(profilePicUrl)}&username=${username}`
-      : `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff`
+    // 🔥 PROCESSAR URL DA FOTO COM VALIDAÇÃO
+    console.log('📸 Processando URL da foto...')
+    console.log('   - URL crua:', userData.profilePic ? 'SIM' : 'NÃO')
+    
+    const processedImageUrl = processInstagramImageUrl(userData.profilePic, username)
+    
+    console.log('   - URL processada:', processedImageUrl.substring(0, 80) + '...')
+    console.log('   - É genérica?', processedImageUrl.includes('ui-avatars') ? 'SIM ⚠️' : 'NÃO ✅')
     
     return Response.json({
       username: userData.username,
       fullName: userData.fullName,
-      profilePic: proxiedImageUrl,
+      profilePic: processedImageUrl, // ✅ URL VALIDADA E PROCESSADA
       followers: userData.followers,
       following: userData.following,
       posts: userData.posts,
