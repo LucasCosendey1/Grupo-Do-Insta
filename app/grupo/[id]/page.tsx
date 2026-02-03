@@ -1,8 +1,10 @@
+//app/grupo/[id]/page.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { processInstagramImageUrl, handleImageError } from '@/lib/image-utils'
 import '../../globals.css'
 
 // ==========================================
@@ -324,7 +326,7 @@ export default function GrupoPage() {
     }
   }
 
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
+  const handleImageErrorInternal = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
     if (!e.currentTarget.src.includes('ui-avatars.com')) {
       e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
     }
@@ -467,7 +469,7 @@ export default function GrupoPage() {
           </div>
         </div>
 
-        {/* LOGIN EMBUTIDO */}
+        {/* LOGIN EMBUTIDO (CORREÇÃO 1) */}
         {!userProfile && (
             <div className="login-embedded-container" style={{ marginBottom: 20, padding: '0 10px' }}>
                 <div className="input-group" style={{ position: 'relative' }}>
@@ -508,21 +510,25 @@ export default function GrupoPage() {
                             maxHeight: '300px',
                             overflowY: 'auto'
                         }}>
-                            {searchResults.map(p => (
+                            {searchResults.map(p => {
+                                const safeProfilePic = processInstagramImageUrl(p.profilePic, p.username)
+                                
+                                return (
                                 <div 
                                     key={p.username} 
                                     className="search-result-item"
                                     style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
                                     onClick={() => handleLoginAndJoin(p)}
                                 >
-                                    <img src={p.profilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
+                                    <img src={safeProfilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageErrorInternal(e, p.username)} alt={p.username}/>
                                     <div style={{flex:1, minWidth: 0}}>
                                         <div style={{fontWeight:'bold', fontSize:14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>@{p.username}</div>
                                         <div style={{fontSize:12, color:'#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.fullName}</div>
                                     </div>
                                     <div style={{fontSize:12, color:'#4CAF50', flexShrink: 0}}>Entrar →</div>
                                 </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     )}
                 </div>
@@ -580,19 +586,19 @@ export default function GrupoPage() {
             {/* 🔥 ARENA COM TOP 15 */}
             <ProfilesArena 
               profiles={topProfiles}
-              onImageError={handleImageError}
+              onImageError={handleImageErrorInternal}
               onProfileClick={setSelectedProfile}
               creatorUsername={groupData?.creator || ''}
               currentUsername={userProfile?.username || ''}
               isUserMember={isUserMember}
             />
             
-            {/* 🔥 LISTA COMPLETA ABAIXO */}
+            {/* 🔥 LISTA COMPLETA ABAIXO (CORREÇÃO 2) */}
             <MembersList 
               profiles={profiles}
               topProfiles={topProfiles}
               onProfileClick={setSelectedProfile}
-              onImageError={handleImageError}
+              onImageError={handleImageErrorInternal}
             />
           </div>
         )}
@@ -602,7 +608,7 @@ export default function GrupoPage() {
           <ProfileModal 
             profile={selectedProfile}
             onClose={() => setSelectedProfile(null)}
-            onImageError={handleImageError}
+            onImageError={handleImageErrorInternal}
           />
         )}
       </div>
@@ -664,7 +670,11 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
         flexDirection: 'column',
         gap: '10px'
       }}>
-        {outsideArena.map((profile) => (
+        {outsideArena.map((profile) => {
+            // CORREÇÃO 2: Processar URL da imagem
+            const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
+            
+            return (
           <div 
             key={profile.username}
             onClick={() => onProfileClick(profile)}
@@ -692,7 +702,7 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
             {/* Foto */}
             <div style={{ position: 'relative' }}>
               <img 
-                src={profile.profilePic}
+                src={safeProfilePic}
                 alt={profile.username}
                 onError={(e) => onImageError(e, profile.username)}
                 style={{
@@ -756,7 +766,8 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
               →
             </div>
           </div>
-        ))}
+            )
+        })}
       </div>
     </div>
   )
@@ -832,8 +843,11 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
   // 🔥 NOVAS REFS PARA A FÍSICA ATUALIZADA
   const lastWallCollisionTime = useRef(0)
   const collisionCooldowns = useRef<Record<string, number>>({})
-
+  
+  // CORREÇÃO 3: Processar URL da imagem
+  const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
   const BOUNDARY_PADDING = 5 
+
   const WALL_COLLISION_COOLDOWN = 200
   const COLLISION_COOLDOWN = 200
 
@@ -1086,7 +1100,7 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         </div>
       )}
       <img 
-        src={profile.profilePic} 
+        src={safeProfilePic} 
         alt={profile.username} 
         className="profile-pic" 
         onError={(e) => onImageError(e, profile.username)}
@@ -1114,6 +1128,9 @@ interface ProfileModalProps {
 }
 
 function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
+  // CORREÇÃO 4: Processar URL da imagem
+  const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
+
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -1165,7 +1182,7 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
         
         <div className="modal-header-compact" style={{padding: '25px 20px 20px'}}>
           <img 
-            src={profile.profilePic} 
+            src={safeProfilePic} 
             alt={profile.username} 
             className="modal-profile-pic-small" 
             onError={(e) => onImageError(e, profile.username)}
