@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import './globals.css'
 
 interface UserProfile {
@@ -128,7 +129,6 @@ export default function Home() {
     router.push('/criar-grupo')
   }
 
-  // ✅ COPIAR LINK
   const handleShareGroup = (group: Group) => {
     const identifier = getGroupIdentifier(group)
     const link = `${window.location.origin}/grupo/${identifier}`
@@ -145,7 +145,6 @@ export default function Home() {
     })
   }
 
-  // ✅ MODAL SAIR
   const openLeaveModal = (group: Group) => {
     setOpenMenuId(null) 
     setLeaveModalGroup(group) 
@@ -223,7 +222,7 @@ export default function Home() {
   const isGroupAdmin = (group: Group): boolean => {
     if (!userProfile) return false
     // Se for o admin geral, tem permissão em tudo
-    if (isAdmin) return true; 
+    if (isAdmin) return true
     return group.creator?.toLowerCase() === userProfile.username.toLowerCase()
   }
 
@@ -231,7 +230,7 @@ export default function Home() {
 
   return (
     <div className="container">
-      {/* ✨ MODAL SAIR - OTIMIZADO MOBILE */}
+      {/* MODAL SAIR */}
       {leaveModalGroup && (
         <div className="modal-overlay" style={{
           position: 'fixed', 
@@ -326,7 +325,7 @@ export default function Home() {
       )}
 
       <div className="card">
-        {/* Header Actions - OTIMIZADO MOBILE */}
+        {/* Header Actions */}
         <div className="user-header-actions" style={{
           padding: '0 10px'
         }}>
@@ -378,8 +377,38 @@ export default function Home() {
             </div>
         </div>
 
-        <div className="header">
-          <div className="logo">⚡</div>
+<div className="header">
+          {/* 🔥 LOGO ENQUADRADA (SEM PADDING) */}
+          <div style={{
+            width: '120px',  // Ajustei o tamanho para ficar harmônico
+            height: '120px',
+            margin: '0 auto 24px',
+            background: '#000', // Fundo preto para garantir
+            border: '2px solid #00bfff',
+            borderRadius: '28px', // 🟢 Arredondado igual ao do iPhone/App (Squircle)
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0', // 🟢 IMPORTANTE: Padding zero para a imagem encostar na borda
+            boxShadow: '0 0 30px rgba(0, 191, 255, 0.3), inset 0 0 20px rgba(0, 191, 255, 0.1)',
+            animation: 'pulse 2s ease-in-out infinite',
+            position: 'relative',
+            overflow: 'hidden' // 🟢 Corta a imagem nas pontas arredondadas
+          }}>
+            <Image 
+              src="/instadogrupo-logo.png" 
+              alt="Insta do Grupo"
+              width={120}
+              height={120}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover', // 🟢 'cover' faz a imagem preencher TUDO sem deixar buraco
+              }}
+              priority
+            />
+          
+        </div>
           <h1>Insta do Grupo</h1>
           <p className="subtitle">Bem-vindo, @{userProfile?.username}!</p>
         </div>
@@ -392,7 +421,6 @@ export default function Home() {
               width: '100%',
               maxWidth: '100%'
             }}>
-              {/* 🟢 BOTÃO VERDE - CRIAR GRUPO */}
               <Link 
                 href="/criar-grupo" 
                 className="btn btn-primary btn-hero"

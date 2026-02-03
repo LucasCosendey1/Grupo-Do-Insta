@@ -1,3 +1,4 @@
+//app/api/grupos/adicionar-membro/route.js
 import { sql } from '@vercel/postgres'
 
 export async function POST(request) {
@@ -63,8 +64,22 @@ export async function POST(request) {
       const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${username}`)
       
       if (scrapeResponse.ok) {
-        fullProfileData = await scrapeResponse.json()
+        const scrapedData = await scrapeResponse.json()
         console.log('✅ Dados obtidos da API scrape')
+        console.log('📸 Foto URL do scrape:', scrapedData.profilePic ? 'SIM' : 'NÃO')
+        
+        // 🔥 GARANTIR QUE A FOTO DO SCRAPE SEJA USADA
+        fullProfileData = {
+          username: scrapedData.username || username,
+          fullName: scrapedData.fullName || username,
+          profilePic: scrapedData.profilePic || '', // ✅ USA FOTO DO SCRAPE
+          followers: scrapedData.followers || 0,
+          following: scrapedData.following || 0,
+          posts: scrapedData.posts || 0,
+          biography: scrapedData.biography || '',
+          isPrivate: scrapedData.isPrivate || false,
+          isVerified: scrapedData.isVerified || false
+        }
       } else {
         console.warn('⚠️ Scrape falhou, usando dados básicos')
         console.warn('   Status:', scrapeResponse.status)
@@ -81,6 +96,14 @@ export async function POST(request) {
         }
       }
     }
+
+    // 🔥 LOG DETALHADO DA FOTO ANTES DE SALVAR
+    console.log('')
+    console.log('📸 VERIFICAÇÃO FINAL DA FOTO:')
+    console.log('   - Tem profilePic?', !!fullProfileData.profilePic)
+    console.log('   - É proxy?', fullProfileData.profilePic?.includes('/api/image-proxy'))
+    console.log('   - É genérica?', fullProfileData.profilePic?.includes('ui-avatars'))
+    console.log('   - URL completa:', fullProfileData.profilePic || 'VAZIA')
 
     console.log('')
     console.log('📋 Dados finais para INSERT:')
