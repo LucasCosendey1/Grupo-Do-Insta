@@ -8,7 +8,7 @@ import '../../globals.css'
 // ==========================================
 // CONSTANTES
 // ==========================================
-const MAX_ARENA_MEMBERS = 3 // 🔥 LIMITE DA ARENA (Criador + 2 melhores)
+const MAX_ARENA_MEMBERS = 15 // 🔥 LIMITE DA ARENA (Criador + 2 melhores)
 
 // ==========================================
 // INTERFACES
@@ -58,7 +58,7 @@ export default function GrupoPage() {
   
   // Estados de Dados do Grupo
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [topProfiles, setTopProfiles] = useState<Profile[]>([]) // 🔥 TOP 3 PARA ARENA
+  const [topProfiles, setTopProfiles] = useState<Profile[]>([]) // 🔥 TOP 15 PARA ARENA
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [groupData, setGroupData] = useState<GroupData | null>(null)
   const [isLoadingGroup, setIsLoadingGroup] = useState(true)
@@ -105,7 +105,7 @@ export default function GrupoPage() {
     }
   }, [])
 
-  // ✅ 3. Carregar Grupo COM DEBUG INTENSO
+  // ✅ 3. Carregar Grupo
   useEffect(() => {
     if (!groupId) return
     
@@ -123,48 +123,11 @@ export default function GrupoPage() {
         
         const data = await response.json()
         
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.log('🔍 DEBUG COMPLETO DOS DADOS DA API')
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        console.log('data.success:', data.success)
-        console.log('data.group:', data.group ? 'EXISTS' : 'NULL')
-        console.log('data.group.creator:', data.group?.creator)
-        console.log('data.group.profiles:', data.group?.profiles?.length, 'membros')
-        console.log('')
-        console.log('👥 PERFIS RECEBIDOS:')
-        data.group?.profiles?.forEach((p: any, index: number) => {
-          console.log(`  ${index + 1}. @${p.username}`)
-          console.log(`     - followers: ${p.followers}`)
-          console.log(`     - isCreator: ${p.isCreator} ${p.isCreator ? '👑' : ''}`)
-        })
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-        
         if (data.success && data.group) {
           setGroupData(data.group)
           
-          // 🔥 NÃO RECALCULAR! CONFIAR NO QUE VEM DA API
           const allProfiles = data.group.profiles || []
           setProfiles(allProfiles)
-          
-          console.log('')
-          console.log('🔍 VERIFICANDO CRIADOR:')
-          const creator = allProfiles.find((p: Profile) => p.isCreator === true)
-          if (creator) {
-            console.log('✅ Criador encontrado:', creator.username, `(${creator.followers} seguidores)`)
-          } else {
-            console.error('❌ NENHUM CRIADOR ENCONTRADO!')
-            console.log('Verificando manualmente pelo creator field:', data.group.creator)
-            const manualCreator = allProfiles.find((p: Profile) => 
-              p.username.toLowerCase() === data.group.creator?.toLowerCase()
-            )
-            if (manualCreator) {
-              console.log('⚠️ Encontrado manualmente:', manualCreator.username)
-              console.log('⚠️ Mas isCreator dele é:', manualCreator.isCreator)
-            }
-          }
-          
-          console.log('')
-          console.log('🏗️ MONTANDO ARENA:')
           
           // Separar criador dos outros
           const creatorProfile = allProfiles.find((p: Profile) => p.isCreator === true)
@@ -178,44 +141,14 @@ export default function GrupoPage() {
           
           if (creatorProfile) {
             arenaMembers.push(creatorProfile)
-            console.log('👑 Criador adicionado na arena:', creatorProfile.username, `(${creatorProfile.followers} seguidores)`)
-          } else {
-            console.error('❌ Criador não foi adicionado (não encontrado)')
           }
           
           // Pegar os (MAX - 1) melhores não-criadores
           const remainingSlots = MAX_ARENA_MEMBERS - (creatorProfile ? 1 : 0)
           const topNonCreators = sortedNonCreators.slice(0, remainingSlots)
           
-          console.log(`📊 Adicionando top ${remainingSlots} não-criadores:`)
-          topNonCreators.forEach((p, i) => {
-            console.log(`   ${i + 1}. @${p.username} (${p.followers} seguidores)`)
-          })
-          
           arenaMembers.push(...topNonCreators)
-          
           setTopProfiles(arenaMembers)
-          
-          console.log('')
-          console.log(`✅ ${allProfiles.length} membros carregados`)
-          console.log(`🏆 Arena final (${arenaMembers.length}/${MAX_ARENA_MEMBERS}):`)
-          arenaMembers.forEach((p, i) => {
-            console.log(`   ${i + 1}. ${p.isCreator ? '👑' : '  '} @${p.username} (${p.followers} seguidores)`)
-          })
-          
-          // Mostrar quem ficou de fora
-          const outsideArena = allProfiles.filter((p: Profile) => 
-            !arenaMembers.some(a => a.username.toLowerCase() === p.username.toLowerCase())
-          )
-          if (outsideArena.length > 0) {
-            console.log(`📋 Fora da arena (${outsideArena.length}):`)
-            outsideArena.forEach((p: Profile) => {
-              console.log(`   - @${p.username} (${p.followers} seguidores)`)
-            })
-          } else {
-            console.log('📋 Todos os membros estão na arena!')
-          }
-          console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
         }
       } catch (error) {
         console.error('❌ Erro ao carregar grupo:', error)
@@ -230,14 +163,10 @@ export default function GrupoPage() {
   // ✅ 4. Verificar Membro
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
-      // 🔥 ACESSO ESPECIAL: @instadogrupo.oficial pode ver tudo sem ser membro
       if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
-        console.log('🔓 Acesso especial concedido para @instadogrupo.oficial')
         setIsUserMember(true)
         return
       }
-      
-      // Verificação normal para outros usuários
       const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
       setIsUserMember(isMember)
     }
@@ -317,7 +246,6 @@ export default function GrupoPage() {
             throw new Error(result.error)
         }
 
-        // Recarregar grupo completo da API
         window.location.reload()
 
     } catch (err) {
@@ -362,7 +290,6 @@ export default function GrupoPage() {
         body: JSON.stringify({ groupId, username: userProfile.username })
     })
     
-    // Recarregar grupo completo da API
     window.location.reload()
   }
 
@@ -531,7 +458,7 @@ export default function GrupoPage() {
                           onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
                           onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
                         >
-                             Compartilhar Grupo
+                              Compartilhar Grupo
                         </button>
 
                     </div>
@@ -650,7 +577,7 @@ export default function GrupoPage() {
               </div>
             </div>
             
-            {/* 🔥 ARENA COM TOP 3 */}
+            {/* 🔥 ARENA COM TOP 15 */}
             <ProfilesArena 
               profiles={topProfiles}
               onImageError={handleImageError}
@@ -836,7 +763,7 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
 }
 
 // ==========================================
-// ARENA & FÍSICA (código mantido igual)
+// ARENA & FÍSICA ATUALIZADA
 // ==========================================
 
 interface ProfilesArenaProps {
@@ -849,10 +776,14 @@ interface ProfilesArenaProps {
 }
 
 function ProfilesArena({ profiles, onImageError, onProfileClick }: ProfilesArenaProps) {
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({})
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
 
-  const updatePosition = (username: string, position: { x: number; y: number }) => {
-    setPositions(prev => ({ ...prev, [username]: position }))
+  // 🔥 Atualiza posição E tamanho (necessário para colisão correta)
+  const updatePosition = (username: string, position: { x: number; y: number }, size?: number) => {
+    setPositions(prev => ({ 
+      ...prev, 
+      [username]: { ...position, size: size || prev[username]?.size } 
+    }))
   }
 
   return (
@@ -884,8 +815,8 @@ interface MovingProfileProps {
   profile: Profile
   onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
-  allPositions: Record<string, { x: number; y: number }>
-  updatePosition: (username: string, position: { x: number; y: number }) => void
+  allPositions: Record<string, { x: number; y: number; size?: number }>
+  updatePosition: (username: string, position: { x: number; y: number }, size?: number) => void
   isAdmin: boolean
 }
 
@@ -897,8 +828,14 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
+  
+  // 🔥 NOVAS REFS PARA A FÍSICA ATUALIZADA
+  const lastWallCollisionTime = useRef(0)
+  const collisionCooldowns = useRef<Record<string, number>>({})
 
   const BOUNDARY_PADDING = 5 
+  const WALL_COLLISION_COOLDOWN = 200
+  const COLLISION_COOLDOWN = 200
 
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 45
@@ -914,24 +851,19 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 
   const imageSize = calculateImageSize(profile.followers)
 
+  // Função auxiliar de colisão
   const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
-    const dx = pos1.x - pos2.x
-    const dy = pos1.y - pos2.y
+    const center1 = { x: pos1.x + size1 / 2, y: pos1.y + size1 / 2 }
+    const center2 = { x: pos2.x + size2 / 2, y: pos2.y + size2 / 2 }
+    const dx = center1.x - center2.x
+    const dy = center1.y - center2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
     return distance < (size1 + size2) / 2
   }
 
-  const resolveCollision = (myPos: { x: number; y: number }, otherPos: { x: number; y: number }, myVel: { x: number; y: number }): { x: number; y: number } => {
-    const dx = myPos.x - otherPos.x
-    const dy = myPos.y - otherPos.y
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    if (distance === 0) return myVel
-    const nx = dx / distance
-    const ny = dy / distance
-    const dotProduct = myVel.x * nx + myVel.y * ny
-    return { x: myVel.x - 2 * dotProduct * nx, y: myVel.y - 2 * dotProduct * ny }
-  }
-
+  // ==========================================
+  // INICIALIZAÇÃO E ANIMAÇÃO ATUALIZADA
+  // ==========================================
   useEffect(() => {
     if (!containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -939,14 +871,69 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
 
+    // Função de IA para direção
+    const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
+      const NUM_DIRECTIONS = 16
+      let bestDirection = { x: 0, y: 0 }
+      let maxMinDistance = 0
+  
+      for (let i = 0; i < NUM_DIRECTIONS; i++) {
+        const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
+        const testDirection = { x: Math.cos(angle), y: Math.sin(angle) }
+        let minDistanceInDirection = Infinity
+  
+        // Paredes
+        if (testDirection.x > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaWidth - currentPos.x - imageSize) / testDirection.x)
+        if (testDirection.x < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.x - BOUNDARY_PADDING) / -testDirection.x)
+        if (testDirection.y > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaHeight - currentPos.y - imageSize) / testDirection.y)
+        if (testDirection.y < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.y - BOUNDARY_PADDING) / -testDirection.y)
+  
+        // Outras Bolinhas
+        Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+          if (username === profile.username || !otherPos) return
+          const dx = otherPos.x - currentPos.x
+          const dy = otherPos.y - currentPos.y
+          const distance = Math.sqrt(dx * dx + dy * dy)
+          const directionToOther = { x: dx / distance, y: dy / distance }
+          const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
+          if (dotProduct > 0.3) minDistanceInDirection = Math.min(minDistanceInDirection, distance)
+        })
+  
+        if (minDistanceInDirection > maxMinDistance) {
+          maxMinDistance = minDistanceInDirection
+          bestDirection = testDirection
+        }
+      }
+  
+      if (maxMinDistance === 0) {
+        const randomAngle = Math.random() * Math.PI * 2
+        bestDirection = { x: Math.cos(randomAngle), y: Math.sin(randomAngle) }
+      }
+      return bestDirection
+    }
+
+    // Inicialização (Posicionamento Seguro)
     if (!isInitializedRef.current) {
-      const initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - (BOUNDARY_PADDING * 2))
-      const initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - (BOUNDARY_PADDING * 2))
+      let initialX = 0;
+      let initialY = 0;
+      let attempts = 0;
+      
+      do {
+        initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
+        initialY = BOUNDARY_PADDING + Math.random() * (arenaHeight - imageSize - BOUNDARY_PADDING * 2)
+        attempts++
+      } while (
+        attempts < 50 && 
+        Object.entries(allPositions || {}).some(([username, pos]) => 
+          username !== profile.username && pos && checkCollision({ x: initialX, y: initialY }, pos, imageSize, pos.size || imageSize)
+        )
+      )
+
       setPosition({ x: initialX, y: initialY })
-      updatePosition(profile.username, { x: initialX, y: initialY })
-      const speed = profile.isVerified ? (1.3 + Math.random() * 1.3) : (0.9 + Math.random() * 1.2)
-      const angle = Math.random() * Math.PI * 2
-      velocityRef.current = { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed }
+      updatePosition(profile.username, { x: initialX, y: initialY }, imageSize)
+      const baseSpeed = profile.isVerified ? 0.8 : 0.6
+      const direction = findBestDirection({ x: initialX, y: initialY })
+      velocityRef.current = { x: direction.x * baseSpeed, y: direction.y * baseSpeed }
       isInitializedRef.current = true
     }
 
@@ -955,44 +942,93 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         animationRef.current = requestAnimationFrame(animate)
         return
       }
+
       setPosition(prev => {
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
-        if (newX <= 0 || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
-          velocityRef.current.x *= -1
-          newX = Math.max(0, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+        let needsNewDirection = false
+        const currentTime = Date.now()
+
+        // Paredes com Cooldown
+        const timeSinceWallCollision = currentTime - lastWallCollisionTime.current
+        const canCheckWallCollision = timeSinceWallCollision > WALL_COLLISION_COOLDOWN
+
+        if (canCheckWallCollision) {
+            let hitWall = false
+            if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
+                newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+                hitWall = true
+                needsNewDirection = true
+            }
+            if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
+                newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
+                hitWall = true
+                needsNewDirection = true
+            }
+            if (hitWall) lastWallCollisionTime.current = currentTime
+        } else {
+            newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+            newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
-        if (newY <= 0 || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
-          velocityRef.current.y *= -1
-          newY = Math.max(0, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
-        }
+
         const newPos = { x: newX, y: newY }
-        Object.entries(allPositions).forEach(([username, otherPos]) => {
-          if (username !== profile.username && otherPos) {
-            if (checkCollision(newPos, otherPos, imageSize, imageSize)) {
-              velocityRef.current = resolveCollision(newPos, otherPos, velocityRef.current)
+
+        // Colisões com Cooldown Individual
+        if (!needsNewDirection) {
+          Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+            if (username === profile.username || !otherPos) return
+
+            const lastCollision = collisionCooldowns.current[username] || 0
+            const canCollideWithThisBall = (currentTime - lastCollision) > COLLISION_COOLDOWN
+            const otherSize = otherPos.size || imageSize
+
+            if (checkCollision(newPos, otherPos, imageSize, otherSize)) {
+              // Física de "Empurrar" (Resolver sobreposição)
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
+
               if (distance > 0) {
-                const pushDistance = (imageSize - distance) / 2
-                newPos.x += (dx / distance) * pushDistance
-                newPos.y += (dy / distance) * pushDistance
+                const radius1 = imageSize / 2
+                const radius2 = otherSize / 2
+                const overlap = (radius1 + radius2) - distance
+
+                if (overlap > 0) {
+                    const pushDistance = overlap / 2 + 2
+                    newPos.x += (dx / distance) * pushDistance
+                    newPos.y += (dy / distance) * pushDistance
+                }
+              }
+
+              // Muda direção
+              if (canCollideWithThisBall) {
+                needsNewDirection = true
+                collisionCooldowns.current[username] = currentTime
               }
             }
-          }
-        })
-        updatePosition(profile.username, newPos)
+          })
+        }
+
+        if (needsNewDirection) {
+          const baseSpeed = profile.isVerified ? 0.8 : 0.6
+          const bestDirection = findBestDirection(newPos)
+          velocityRef.current = { x: bestDirection.x * baseSpeed, y: bestDirection.y * baseSpeed }
+        }
+
+        updatePosition(profile.username, newPos, imageSize)
         return newPos
       })
+
       animationRef.current = requestAnimationFrame(animate)
     }
+
     animationRef.current = requestAnimationFrame(animate)
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
+    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
   }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
+  // ==========================================
+  // TOOLTIP E RENDER
+  // ==========================================
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -1008,13 +1044,13 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
 
-  const formatNumber = (num: number): string => {
+  const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
-  const getTooltipClass = (): string => {
+  const getTooltipClass = () => {
     const classes = ['profile-info']
     if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
     if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
@@ -1031,8 +1067,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         top: `${position.y}px`, 
         width: `${imageSize}px`, 
         height: `${imageSize}px`, 
-        position: 'absolute',
-        touchAction: 'none'
+        position: 'absolute', 
+        touchAction: 'none',
+        transition: 'none'
       }} 
       onMouseEnter={() => setIsHovered(true)} 
       onMouseLeave={() => setIsHovered(false)}
