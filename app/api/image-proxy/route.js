@@ -1,81 +1,55 @@
-// ✅ PROXY DE IMAGENS CORRIGIDO
-// Tenta buscar foto do Instagram, se falhar retorna avatar genérico DIRETO
+// app/api/image-proxy/route.js
+
+export const runtime = 'edge'
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const imageUrl = searchParams.get('url')
   const username = searchParams.get('username') || 'User'
 
-  // ❌ Se não tem URL, retorna avatar genérico IMEDIATAMENTE
+  // Se não tiver URL, retorna Avatar Genérico
   if (!imageUrl || imageUrl.trim() === '') {
-    console.log('⚠️ [IMAGE-PROXY] URL vazia para', username)
-    const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&size=200&background=00bfff&color=fff&bold=true`
-    
-    try {
-      const avatarResponse = await fetch(avatarUrl)
-      const avatarBuffer = await avatarResponse.arrayBuffer()
-      
-      return new Response(avatarBuffer, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=3600',
-        }
-      })
-    } catch {
-      return new Response('Image not found', { status: 404 })
-    }
+    return serveFallback(username)
   }
 
   try {
-    console.log('📸 [IMAGE-PROXY] Buscando:', imageUrl.substring(0, 50) + '...')
+    // Tenta primeiro via Weserv (Proxy de Imagem Open Source)
+    // Isso contorna o erro 403 do Instagram na maioria dos casos
+    const wsrvUrl = `https://wsrv.nl/?url=${encodeURIComponent(imageUrl)}&output=jpg&q=80&w=400`
     
-    // 🔥 CORREÇÃO 1: Decodificar &amp; antes de fazer fetch
-    const cleanUrl = imageUrl.replace(/&amp;/g, '&')
-    
-    const response = await fetch(cleanUrl, {
+    const response = await fetch(wsrvUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Referer': 'https://www.instagram.com/',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (compatible; ImageProxy/1.0)',
       },
-      // 🔥 CORREÇÃO 2: Timeout de 5 segundos
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(8000)
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(`Weserv falhou: ${response.status}`)
     }
 
-    const imageBuffer = await response.arrayBuffer()
-    
-    console.log('✅ [IMAGE-PROXY] Foto carregada!')
-
-    return new Response(imageBuffer, {
+    // Retorna a imagem processada
+    return new Response(response.body, {
       headers: {
-        'Content-Type': response.headers.get('content-type') || 'image/jpeg',
-        'Cache-Control': 'public, max-age=86400',
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Access-Control-Allow-Origin': '*',
       },
     })
     
   } catch (error) {
-    console.error('❌ [IMAGE-PROXY] Erro:', error.message)
+    console.error(`⚠️ [PROXY ERROR]: ${username}`, error.message)
     
-    // 🔥 CORREÇÃO 3: Retornar avatar genérico (não redirecionar)
-    const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&size=200&background=00bfff&color=fff&bold=true`
-    
-    try {
-      const avatarResponse = await fetch(avatarUrl)
-      const avatarBuffer = await avatarResponse.arrayBuffer()
-      
-      return new Response(avatarBuffer, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=3600',
-        }
-      })
-    } catch (avatarError) {
-      // Se até o avatar falhar, retorna 404
-      return new Response('Image not found', { status: 404 })
-    }
+    // Se tudo falhar, fallback para o avatar de letras
+    return serveFallback(username)
   }
+}
+
+// Função auxiliar para avatar de letras
+async function serveFallback(username) {
+  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&size=200&background=00bfff&color=fff&bold=true`
+  const res = await fetch(avatarUrl)
+  return new Response(res.body, {
+    headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=3600' }
+  })
 }

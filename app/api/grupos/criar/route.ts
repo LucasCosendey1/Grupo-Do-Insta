@@ -2,13 +2,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 import { generateUniqueSlug } from '@/lib/slug-utils'
+import { scrapeInstagramProfile } from '@/lib/instagram-service' // 🔥 Importando o cérebro
+import { nanoid } from 'nanoid' // Se der erro aqui, veja nota abaixo*
+
+// Se não tiver nanoid instalado, pode usar esta função simples:
+// const nanoid = (size = 10) => Math.random().toString(36).substring(2, 2 + size)
 
 export async function POST(request: NextRequest) {
   try {
     const { name, icon, creatorUsername } = await request.json()
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🚀 CRIAR GRUPO (BUSCANDO DO INSTAGRAM)')
+    console.log('🚀 CRIAR GRUPO (MODO OTIMIZADO)')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('📦 Nome:', name)
     console.log('👤 Criador:', creatorUsername)
@@ -20,74 +25,75 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 🔥 BUSCAR DADOS DO INSTAGRAM (igual aos outros membros)
-    console.log('🔍 Buscando dados do criador no INSTAGRAM...')
+    // 1️⃣ BUSCAR DADOS (Sem fetch interno, chamando a lib direto)
+    console.log('🔍 Buscando dados do criador via Service...')
     
-    // Detectar URL base
-    const getBaseUrl = () => {
-      const host = request.headers.get('host')
-      const protocol = request.headers.get('x-forwarded-proto') || 'http'
-      
-      if (host) {
-        return `${protocol}://${host}`
-      }
-      
-      if (process.env.VERCEL_URL) {
-        return `https://${process.env.VERCEL_URL}`
-      }
-      
-      return 'http://localhost:3000'
+    // Tenta pegar do Cache primeiro (Banco) para ser ultra-rápido
+    let creatorData: any = null
+    
+    const dbCache = await sql`
+        SELECT * FROM usuarios 
+        WHERE username = ${creatorUsername.toLowerCase()} 
+        AND updated_at > NOW() - INTERVAL '24 hours'
+    `
+
+    if (dbCache.rows.length > 0) {
+        console.log('✅ Criador encontrado no Cache (Banco)!')
+        creatorData = dbCache.rows[0]
+        // Ajuste de camelCase se vier do banco snake_case
+        creatorData.fullName = creatorData.full_name
+        creatorData.profilePic = creatorData.profile_pic
+        creatorData.isVerified = creatorData.is_verified
+        creatorData.isPrivate = creatorData.is_private
+    } else {
+        console.log('🌍 Criador não está no cache. Buscando no Instagram...')
+        creatorData = await scrapeInstagramProfile(creatorUsername)
     }
-    
-    const baseUrl = getBaseUrl()
-    console.log('🌐 Base URL:', baseUrl)
-    
-    const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${creatorUsername}`)
-    
-    if (!scrapeResponse.ok) {
-      console.error('❌ Falha ao buscar dados do Instagram')
+
+    if (!creatorData) {
+      console.error('❌ Falha ao obter dados do criador')
       return NextResponse.json(
-        { error: 'Não foi possível buscar dados do Instagram. Tente novamente.' },
-        { status: 500 }
+        { error: 'Perfil do Instagram não encontrado ou privado.' },
+        { status: 404 }
       )
     }
-    
-    const creatorData = await scrapeResponse.json()
-    
-    console.log('✅ Dados do criador obtidos do INSTAGRAM:')
-    console.log('   - Username:', creatorData.username)
-    console.log('   - Followers:', creatorData.followers)
-    console.log('   - Following:', creatorData.following)
-    console.log('   - Posts:', creatorData.posts)
-    console.log('   - Bio:', creatorData.biography ? `"${creatorData.biography.substring(0, 30)}..."` : 'VAZIO')
-    console.log('')
 
-    // 🔥 SINCRONIZAR COM BANCO (opcional mas recomendado)
-    try {
-      console.log('💾 Sincronizando criador no banco de usuários...')
-      await fetch(`${baseUrl}/api/usuarios/sincronizar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: creatorData.username,
-          fullName: creatorData.fullName,
-          profilePic: creatorData.profilePic,
-          followers: creatorData.followers,
-          following: creatorData.following,
-          posts: creatorData.posts,
-          biography: creatorData.biography,
-          isVerified: creatorData.isVerified,
-          isPrivate: creatorData.isPrivate,
-          instagramId: creatorData.username
-        })
-      })
-      console.log('✅ Criador sincronizado no banco!')
-    } catch (syncError) {
-      console.warn('⚠️ Falha ao sincronizar (continuando mesmo assim):', syncError)
-    }
+    console.log(`✅ Dados garantidos: @${creatorData.username} (${creatorData.followers} seg)`)
 
-    // Gerar slug
-    console.log('🔗 Gerando slug único...')
+    // 2️⃣ SALVAR/ATUALIZAR USUÁRIO NA TABELA MESTRA
+    // Isso substitui a chamada antiga para /api/usuarios/sincronizar
+    console.log('💾 Garantindo usuário na tabela mestra...')
+    await sql`
+      INSERT INTO usuarios (
+        username, full_name, profile_pic, followers, following, posts, 
+        biography, is_verified, is_private, instagram_id, updated_at, last_login
+      ) VALUES (
+        ${creatorData.username}, 
+        ${creatorData.fullName}, 
+        ${creatorData.profilePic}, 
+        ${creatorData.followers}, 
+        ${creatorData.following || 0}, 
+        ${creatorData.posts || 0}, 
+        ${creatorData.biography || ''}, 
+        ${creatorData.isVerified || false}, 
+        ${creatorData.isPrivate || false}, 
+        ${creatorData.username}, 
+        NOW(), 
+        NOW()
+      )
+      ON CONFLICT (username) 
+      DO UPDATE SET 
+        full_name = EXCLUDED.full_name,
+        profile_pic = EXCLUDED.profile_pic,
+        followers = EXCLUDED.followers,
+        updated_at = NOW(),
+        last_login = NOW();
+    `
+
+    // 3️⃣ GERAR ID E SLUG
+    console.log('🔗 Gerando identificadores...')
+    const groupId = nanoid(10) // ID curto e único (ex: V1StGXR8)
+    
     const slug = await generateUniqueSlug(
       name,
       async (testSlug) => {
@@ -95,80 +101,64 @@ export async function POST(request: NextRequest) {
         return result.rows.length > 0
       }
     )
-    console.log('✅ Slug gerado:', slug)
-    console.log('')
 
-    // Inserir grupo
-    console.log('💾 Inserindo grupo no banco...')
+    // 4️⃣ INSERIR GRUPO
+    console.log('💾 Criando grupo...')
     await sql`
-      INSERT INTO grupos (id, slug, name, icon_emoji, icon_name, creator_username)
+      INSERT INTO grupos (id, slug, name, icon_emoji, icon_name, creator_username, created_at, updated_at)
       VALUES (
-        ${slug},
+        ${groupId},
         ${slug},
         ${name},
         ${icon?.emoji || '⚡'},
         ${icon?.name || 'Raio'},
-        ${creatorUsername}
+        ${creatorData.username},
+        NOW(),
+        NOW()
       )
     `
-    console.log('✅ Grupo inserido!')
-    console.log('')
 
-    // 🔥 ADICIONAR CRIADOR (igual aos outros membros)
-    console.log('👥 Adicionando criador como membro (dados do Instagram)...')
+    // 5️⃣ ADICIONAR CRIADOR COMO MEMBRO (ADMIN)
+    console.log('👥 Adicionando criador à tabela de membros...')
     await sql`
       INSERT INTO grupo_membros (
         grupo_id, username, full_name, profile_pic, followers, 
-        following, posts, biography, is_private, is_verified
+        following, posts, biography, is_private, is_verified, added_at
       )
       VALUES (
-        ${slug},
+        ${groupId},
         ${creatorData.username},
-        ${creatorData.fullName || creatorData.username},
-        ${creatorData.profilePic || ''},
-        ${creatorData.followers || 0},
-        ${creatorData.following || 0},      -- ✅ DO INSTAGRAM
-        ${creatorData.posts || 0},          -- ✅ DO INSTAGRAM
-        ${creatorData.biography || ''},     -- ✅ DO INSTAGRAM
+        ${creatorData.fullName},
+        ${creatorData.profilePic},
+        ${creatorData.followers},
+        ${creatorData.following || 0},
+        ${creatorData.posts || 0},
+        ${creatorData.biography || ''},
         ${creatorData.isPrivate || false},
-        ${creatorData.isVerified || false}
+        ${creatorData.isVerified || false},
+        NOW()
       )
     `
-    console.log('✅ Criador adicionado com dados COMPLETOS!')
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('🎉 GRUPO CRIADO COM SUCESSO!')
+    console.log(`🆔 ID: ${groupId} | Slug: ${slug}`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('📊 Resumo:')
-    console.log('   - Slug:', slug)
-    console.log('   - Nome:', name)
-    console.log('   - Following:', creatorData.following)
-    console.log('   - Posts:', creatorData.posts)
-    console.log('   - Bio:', creatorData.biography || 'N/A')
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('')
 
     return NextResponse.json({
       success: true,
-      groupId: slug,
-      slug: slug,
+      groupId: groupId, // Retorna o ID real
+      slug: slug,       // Retorna o Slug amigável
       name: name
     })
 
   } catch (error) {
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('❌ ERRO AO CRIAR GRUPO!')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('Tipo:', error instanceof Error ? error.constructor.name : 'Unknown')
-    console.error('Mensagem:', error instanceof Error ? error.message : 'Erro desconhecido')
-    console.error('')
-    console.error('Stack trace:')
-    console.error(error instanceof Error ? error.stack : 'N/A')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('')
+    console.error('❌ ERRO CRÍTICO AO CRIAR GRUPO:', error)
     
+    // Tratamento de erro detalhado
+    const msg = error instanceof Error ? error.message : 'Erro desconhecido'
     return NextResponse.json(
-      { error: 'Erro ao criar grupo. Tente novamente.' },
+      { error: `Erro ao criar grupo: ${msg}` },
       { status: 500 }
     )
   }
