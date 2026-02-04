@@ -8,18 +8,13 @@ export async function POST(request: Request) {
   try {
     const { groupId, username } = await request.json()
 
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🚪 [API] SAIR DO GRUPO (MODO EXTERMINADOR)')
-    console.log('📦 Grupo:', groupId)
-    console.log('👤 Usuário:', username)
-
     if (!groupId || !username) {
       return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 })
     }
 
     const cleanUsername = username.toLowerCase().trim()
 
-    // 1️⃣ DESCOBRIR O ID REAL DO GRUPO
+    // 1️⃣ IDENTIFICAR GRUPO
     const grupoCheck = await sql`
       SELECT id, name FROM grupos WHERE id = ${groupId} OR slug = ${groupId} LIMIT 1
     `
@@ -30,33 +25,44 @@ export async function POST(request: Request) {
 
     const realGroupId = grupoCheck.rows[0].id
     const groupName = grupoCheck.rows[0].name
-    
-    console.log(`✅ Grupo alvo: ${groupName} (${realGroupId})`)
 
-    // 2️⃣ DELETAR TODAS AS OCORRÊNCIAS (Limpeza de Zumbis)
-    // O segredo é o LOWER() = LOWER() que pega tudo
-    const deleteResult = await sql`
+    // 2️⃣ REMOVER MEMBRO (Exterminador)
+    await sql`
       DELETE FROM grupo_membros 
       WHERE grupo_id = ${realGroupId} 
       AND LOWER(username) = ${cleanUsername}
     `
 
-    console.log(`🗑️ Registros deletados: ${deleteResult.rowCount}`)
+    // 3️⃣ VERIFICAR SE O GRUPO FICOU VAZIO
+    const countCheck = await sql`
+        SELECT COUNT(*) as total FROM grupo_membros WHERE grupo_id = ${realGroupId}
+    `
+    
+    const membrosRestantes = parseInt(countCheck.rows[0].total)
+    
+    if (membrosRestantes === 0) {
+        console.log(`🗑️ Grupo "${groupName}" ficou vazio. Deletando...`)
+        await sql`DELETE FROM grupos WHERE id = ${realGroupId}`
+        console.log('✅ Grupo deletado do banco.')
+        
+        return NextResponse.json({ 
+            success: true, 
+            message: 'Saiu e grupo foi deletado por estar vazio',
+            groupDeleted: true
+        })
+    }
 
-    // 3️⃣ ATUALIZAR TIMESTAMP DO GRUPO
+    // Se ainda tem gente, só atualiza o timestamp
     await sql`UPDATE grupos SET updated_at = NOW() WHERE id = ${realGroupId}`
 
     return NextResponse.json({ 
       success: true, 
       message: 'Saiu do grupo com sucesso',
-      deletedCount: deleteResult.rowCount
+      groupDeleted: false
     })
 
   } catch (error: any) {
-    console.error('❌ Erro ao sair do grupo:', error)
-    return NextResponse.json(
-      { error: 'Erro interno ao sair do grupo' }, 
-      { status: 500 }
-    )
+    console.error('❌ Erro ao sair:', error)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
