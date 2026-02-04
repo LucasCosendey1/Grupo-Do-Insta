@@ -28,11 +28,16 @@ export async function scrapeInstagramProfile(username: string) {
     return null
   }
 
-  const processedPic = processInstagramImageUrl(userData.profilePic, username)
+  // 🔥 CORREÇÃO: Garantir que SEMPRE tenha uma URL válida
+  const finalProfilePic = userData.profilePic && userData.profilePic.trim() !== ''
+    ? processInstagramImageUrl(userData.profilePic, username)
+    : `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&size=200&background=00bfff&color=fff&bold=true`
+  
+  console.log(`✅ [SERVICE] Foto final para @${username}: ${finalProfilePic.substring(0, 60)}...`)
   
   return {
     ...userData,
-    profilePic: processedPic
+    profilePic: finalProfilePic
   }
 }
 
@@ -64,7 +69,6 @@ async function tryStrategy(username: string, type: 'android' | 'ios' | 'desktop'
     const response = await fetch(url, {
       headers: headers,
       signal: AbortSignal.timeout(8000),
-      // Adiciona cache: no-store para garantir que não pegue cache da Vercel
       cache: 'no-store'
     })
 
@@ -79,8 +83,15 @@ async function tryStrategy(username: string, type: 'android' | 'ios' | 'desktop'
 
     // --- EXTRAÇÃO DE DADOS ---
     let data = {
-        username, fullName: username, profilePic: '', followers: 0,
-        following: 0, posts: 0, biography: '', isPrivate: false, isVerified: false
+        username, 
+        fullName: username, 
+        profilePic: '', // 🔥 Inicializa como string vazia
+        followers: 0,
+        following: 0, 
+        posts: 0, 
+        biography: '', 
+        isPrivate: false, 
+        isVerified: false
     }
 
     // Regex Poderoso (Pega JSON embutido)
@@ -90,11 +101,9 @@ async function tryStrategy(username: string, type: 'android' | 'ios' | 'desktop'
     // Regex Fallback (Metadados)
     const metaDesc = html.match(/<meta content="([^"]+)" name="description"/)
     if (metaDesc) {
-        // Ex: "100 Followers, 50 Following, 10 Posts..."
         const parts = metaDesc[1].split(', ')
         const followersPart = parts.find(p => p.includes('Followers'))
         if (followersPart) {
-             // Limpa "10.5k" para número
              let num = followersPart.split(' ')[0]
              if (num.includes('M')) data.followers = parseFloat(num) * 1000000
              else if (num.includes('K')) data.followers = parseFloat(num) * 1000
@@ -102,13 +111,22 @@ async function tryStrategy(username: string, type: 'android' | 'ios' | 'desktop'
         }
     }
 
+    // 🔥 EXTRAÇÃO DE IMAGEM COM VALIDAÇÃO
     const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/)
-    if (imageMatch) data.profilePic = imageMatch[1]
+    if (imageMatch && imageMatch[1]) {
+      const rawImageUrl = imageMatch[1].trim()
+      // Só aceita se não for vazio
+      if (rawImageUrl.length > 0) {
+        data.profilePic = rawImageUrl
+      }
+    }
     
     const titleMatch = html.match(/<title>(.*?) \(@/)
     if (titleMatch) data.fullName = titleMatch[1]
 
-    if (data.profilePic && data.followers >= 0) {
+    // 🔥 VALIDAÇÃO: Retorna null se não conseguiu nada útil
+    // Aceita mesmo se profilePic estiver vazio (será tratado depois)
+    if (data.followers >= 0) {
         return data
     }
 

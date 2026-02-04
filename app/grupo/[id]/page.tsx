@@ -1,7 +1,7 @@
-//app/grupo/[id]/page.tsx
+// app/grupo/[id]/page.tsx
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { processInstagramImageUrl, handleImageError } from '@/lib/image-utils'
@@ -10,7 +10,7 @@ import '../../globals.css'
 // ==========================================
 // CONSTANTES
 // ==========================================
-const MAX_ARENA_MEMBERS = 15 // 🔥 LIMITE DA ARENA (Criador + 2 melhores)
+const MAX_ARENA_MEMBERS = 15 // 🔥 LIMITE DA ARENA (Criador + 14 melhores)
 
 // ==========================================
 // INTERFACES
@@ -469,7 +469,7 @@ export default function GrupoPage() {
           </div>
         </div>
 
-        {/* LOGIN EMBUTIDO (CORREÇÃO 1) */}
+        {/* LOGIN EMBUTIDO */}
         {!userProfile && (
             <div className="login-embedded-container" style={{ marginBottom: 20, padding: '0 10px' }}>
                 <div className="input-group" style={{ position: 'relative' }}>
@@ -492,7 +492,7 @@ export default function GrupoPage() {
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
-                         {isSearching && (
+                          {isSearching && (
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
                         )}
                     </div>
@@ -593,7 +593,7 @@ export default function GrupoPage() {
               isUserMember={isUserMember}
             />
             
-            {/* 🔥 LISTA COMPLETA ABAIXO (CORREÇÃO 2) */}
+            {/* 🔥 LISTA COMPLETA ABAIXO */}
             <MembersList 
               profiles={profiles}
               topProfiles={topProfiles}
@@ -671,7 +671,6 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
         gap: '10px'
       }}>
         {outsideArena.map((profile) => {
-            // CORREÇÃO 2: Processar URL da imagem
             const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
             
             return (
@@ -789,13 +788,28 @@ interface ProfilesArenaProps {
 function ProfilesArena({ profiles, onImageError, onProfileClick }: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
 
-  // 🔥 Atualiza posição E tamanho (necessário para colisão correta)
-  const updatePosition = (username: string, position: { x: number; y: number }, size?: number) => {
-    setPositions(prev => ({ 
-      ...prev, 
-      [username]: { ...position, size: size || prev[username]?.size } 
-    }))
-  }
+  // 🔥 CORREÇÃO: Usar useCallback para estabilizar a referência da função
+const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
+  // 🔥 Usar queueMicrotask para evitar warning do React
+  queueMicrotask(() => {
+    setPositions(prev => {
+      const current = prev[username]
+      
+      // Só atualiza se mudou significativamente
+      if (current && 
+          Math.abs(current.x - position.x) < 1 && 
+          Math.abs(current.y - position.y) < 1 &&
+          current.size === (size || current.size)) {
+        return prev
+      }
+      
+      return {
+        ...prev, 
+        [username]: { ...position, size: size || current?.size } 
+      }
+    })
+  })
+}, [])
 
   return (
     <div className="profiles-arena" style={{
@@ -840,11 +854,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
   const velocityRef = useRef({ x: 0, y: 0 })
   const isInitializedRef = useRef(false)
   
-  // 🔥 NOVAS REFS PARA A FÍSICA ATUALIZADA
   const lastWallCollisionTime = useRef(0)
   const collisionCooldowns = useRef<Record<string, number>>({})
   
-  // CORREÇÃO 3: Processar URL da imagem
   const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
   const BOUNDARY_PADDING = 5 
 
@@ -865,7 +877,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 
   const imageSize = calculateImageSize(profile.followers)
 
-  // Função auxiliar de colisão
   const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
     const center1 = { x: pos1.x + size1 / 2, y: pos1.y + size1 / 2 }
     const center2 = { x: pos2.x + size2 / 2, y: pos2.y + size2 / 2 }
@@ -875,9 +886,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     return distance < (size1 + size2) / 2
   }
 
-  // ==========================================
-  // INICIALIZAÇÃO E ANIMAÇÃO ATUALIZADA
-  // ==========================================
+  // 🔥 REMOVIDO: useLayoutEffect que causava loop infinito.
+  // A atualização agora é feita dentro do loop de animação de forma otimizada.
+
   useEffect(() => {
     if (!containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -885,7 +896,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
 
-    // Função de IA para direção
     const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
       const NUM_DIRECTIONS = 16
       let bestDirection = { x: 0, y: 0 }
@@ -896,13 +906,11 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         const testDirection = { x: Math.cos(angle), y: Math.sin(angle) }
         let minDistanceInDirection = Infinity
   
-        // Paredes
         if (testDirection.x > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaWidth - currentPos.x - imageSize) / testDirection.x)
         if (testDirection.x < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.x - BOUNDARY_PADDING) / -testDirection.x)
         if (testDirection.y > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaHeight - currentPos.y - imageSize) / testDirection.y)
         if (testDirection.y < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.y - BOUNDARY_PADDING) / -testDirection.y)
   
-        // Outras Bolinhas
         Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
           if (username === profile.username || !otherPos) return
           const dx = otherPos.x - currentPos.x
@@ -926,7 +934,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
       return bestDirection
     }
 
-    // Inicialização (Posicionamento Seguro)
     if (!isInitializedRef.current) {
       let initialX = 0;
       let initialY = 0;
@@ -944,7 +951,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
       )
 
       setPosition({ x: initialX, y: initialY })
-      updatePosition(profile.username, { x: initialX, y: initialY }, imageSize)
       const baseSpeed = profile.isVerified ? 0.8 : 0.6
       const direction = findBestDirection({ x: initialX, y: initialY })
       velocityRef.current = { x: direction.x * baseSpeed, y: direction.y * baseSpeed }
@@ -963,7 +969,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
         let needsNewDirection = false
         const currentTime = Date.now()
 
-        // Paredes com Cooldown
         const timeSinceWallCollision = currentTime - lastWallCollisionTime.current
         const canCheckWallCollision = timeSinceWallCollision > WALL_COLLISION_COOLDOWN
 
@@ -987,7 +992,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 
         const newPos = { x: newX, y: newY }
 
-        // Colisões com Cooldown Individual
         if (!needsNewDirection) {
           Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
             if (username === profile.username || !otherPos) return
@@ -997,7 +1001,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
             const otherSize = otherPos.size || imageSize
 
             if (checkCollision(newPos, otherPos, imageSize, otherSize)) {
-              // Física de "Empurrar" (Resolver sobreposição)
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
@@ -1014,7 +1017,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
                 }
               }
 
-              // Muda direção
               if (canCollideWithThisBall) {
                 needsNewDirection = true
                 collisionCooldowns.current[username] = currentTime
@@ -1029,7 +1031,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
           velocityRef.current = { x: bestDirection.x * baseSpeed, y: bestDirection.y * baseSpeed }
         }
 
+        // 🔥 CORREÇÃO: Restauramos o updatePosition aqui, mas agora seguro (graças ao useCallback do pai)
         updatePosition(profile.username, newPos, imageSize)
+
         return newPos
       })
 
@@ -1038,85 +1042,109 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 
     animationRef.current = requestAnimationFrame(animate)
     return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
-  }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
+  }, [isHovered, allPositions, profile.username, imageSize, profile.isVerified, updatePosition])
 
-  // ==========================================
-  // TOOLTIP E RENDER
-  // ==========================================
-  useEffect(() => {
-    if (!isHovered || !containerRef.current) return
-    const arena = containerRef.current.parentElement
-    if (!arena) return
-    const arenaWidth = arena.offsetWidth
-    const tooltipHeight = 80
-    const tooltipWidth = 150
-    let vertical = 'top'
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    setIsHovered(true)
+    
+    // Calcular se o tooltip deve aparecer em cima ou embaixo
+    const rect = e.currentTarget.getBoundingClientRect()
+    const spaceTop = rect.top
+    const spaceBottom = window.innerHeight - rect.bottom
+    const vertical = spaceTop < 150 ? 'bottom' : 'top' // Se tiver pouco espaço em cima, mostra embaixo
+    
+    // Calcular horizontal
+    const spaceLeft = rect.left
+    const spaceRight = window.innerWidth - rect.right
     let horizontal = 'center'
-    if (position.y < tooltipHeight) vertical = 'bottom'
-    if (position.x < tooltipWidth / 2) horizontal = 'left'
-    else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
-    setTooltipPosition({ vertical, horizontal })
-  }, [isHovered, position, imageSize])
+    if (spaceLeft < 100) horizontal = 'left'
+    else if (spaceRight < 100) horizontal = 'right'
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
-    return num.toString()
+    setTooltipPosition({ vertical, horizontal })
   }
 
-  const getTooltipClass = () => {
-    const classes = ['profile-info']
-    if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
-    if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
-    else if (tooltipPosition.horizontal === 'right') classes.push('profile-info-right')
-    return classes.join(' ')
+  const handleMouseLeave = () => {
+    setIsHovered(false)
   }
 
   return (
-    <div 
-      ref={containerRef} 
-      className="profile-pic-container" 
-      style={{ 
-        left: `${position.x}px`, 
-        top: `${position.y}px`, 
-        width: `${imageSize}px`, 
-        height: `${imageSize}px`, 
-        position: 'absolute', 
-        touchAction: 'none',
-        transition: 'none'
-      }} 
-      onMouseEnter={() => setIsHovered(true)} 
-      onMouseLeave={() => setIsHovered(false)}
-      onTouchStart={() => setIsHovered(true)}
-      onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
+    <div
+      ref={containerRef}
+      className="profile-bubble"
+      onClick={() => onProfileClick(profile)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        width: imageSize,
+        height: imageSize,
+        borderRadius: '50%',
+        cursor: 'pointer',
+        zIndex: isHovered ? 100 : 1,
+        transition: isHovered ? 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)' : 'none',
+        transform: isHovered ? 'scale(1.3)' : 'scale(1)',
+        boxShadow: isHovered 
+          ? `0 0 30px ${isAdmin ? 'rgba(255, 215, 0, 0.6)' : 'rgba(0, 191, 255, 0.6)'}` 
+          : `0 4px 10px rgba(0,0,0,0.3)`
+      }}
     >
-      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
-      {isHovered && (
-        <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
-          <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
-            @{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
-          </div>
-          <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
+      <div style={{
+        width: '100%',
+        height: '100%',
+        borderRadius: '50%',
+        overflow: 'hidden',
+        border: isAdmin ? '3px solid #FFD700' : '2px solid rgba(0, 255, 136, 0.5)',
+        position: 'relative',
+        background: '#000'
+      }}>
+        <img 
+          src={safeProfilePic} 
+          alt={profile.username}
+          onError={(e) => onImageError(e, profile.username)}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover'
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {profile.isVerified && (
+        <div style={{
+          position: 'absolute',
+          bottom: '0',
+          right: '0',
+          background: '#00bfff',
+          borderRadius: '50%',
+          width: Math.max(16, imageSize * 0.25),
+          height: Math.max(16, imageSize * 0.25),
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: Math.max(10, imageSize * 0.15),
+          fontWeight: 'bold',
+          border: '2px solid #0a0a0f',
+          zIndex: 2
+        }}>
+          ✓
         </div>
       )}
-      <img 
-        src={safeProfilePic} 
-        alt={profile.username} 
-        className="profile-pic" 
-        onError={(e) => onImageError(e, profile.username)}
-        onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
-        loading="lazy"
+
+      {/* TOOLTIP */}
+      <div 
+        className={`bubble-tooltip ${isHovered ? 'visible' : ''} ${tooltipPosition.vertical} ${tooltipPosition.horizontal}`}
         style={{
-          width: '100%',
-          height: '100%',
-          borderRadius: '50%',
-          objectFit: 'cover',
-          cursor: 'pointer',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-          WebkitTouchCallout: 'none'
+           // Ajustes finos de posição baseados no tamanho da bolinha
+           ...(tooltipPosition.vertical === 'top' ? { bottom: '115%' } : { top: '115%' })
         }}
-      />
+      >
+        <div className="tooltip-username">@{profile.username}</div>
+        <div className="tooltip-followers">{profile.followers >= 1000000 ? (profile.followers / 1000000).toFixed(1) + 'M' : (profile.followers / 1000).toFixed(1) + 'K'}</div>
+        <div className="tooltip-tap">Toque para ver</div>
+      </div>
     </div>
   )
 }

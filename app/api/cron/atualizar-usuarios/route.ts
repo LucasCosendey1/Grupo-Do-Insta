@@ -13,13 +13,8 @@ export async function GET(request) {
     const usuariosResult = await sql`
       SELECT username FROM usuarios 
       WHERE username IN (
-        'laramlobo', 
-        'igorjamal', 
-        'p.jeronimoo', 
-        'erikagalizafisioterapia', 
-        'mattos.lele', 
-        'doutor.palestras', 
-        'fladaveiga'
+        'pao.cardona91'
+
       )
     `
 
