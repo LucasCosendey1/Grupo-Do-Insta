@@ -326,12 +326,6 @@ export default function GrupoPage() {
     }
   }
 
-  const handleImageErrorInternal = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
-    if (!e.currentTarget.src.includes('ui-avatars.com')) {
-      e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
-    }
-  }
-
   // --- RENDERS ---
   if (!isMounted) return null
 
@@ -492,7 +486,7 @@ export default function GrupoPage() {
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
-                          {isSearching && (
+                         {isSearching && (
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
                         )}
                     </div>
@@ -520,7 +514,7 @@ export default function GrupoPage() {
                                     style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
                                     onClick={() => handleLoginAndJoin(p)}
                                 >
-                                    <img src={safeProfilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageErrorInternal(e, p.username)} alt={p.username}/>
+                                    <img src={safeProfilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
                                     <div style={{flex:1, minWidth: 0}}>
                                         <div style={{fontWeight:'bold', fontSize:14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>@{p.username}</div>
                                         <div style={{fontSize:12, color:'#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.fullName}</div>
@@ -586,7 +580,6 @@ export default function GrupoPage() {
             {/* 🔥 ARENA COM TOP 15 */}
             <ProfilesArena 
               profiles={topProfiles}
-              onImageError={handleImageErrorInternal}
               onProfileClick={setSelectedProfile}
               creatorUsername={groupData?.creator || ''}
               currentUsername={userProfile?.username || ''}
@@ -598,7 +591,6 @@ export default function GrupoPage() {
               profiles={profiles}
               topProfiles={topProfiles}
               onProfileClick={setSelectedProfile}
-              onImageError={handleImageErrorInternal}
             />
           </div>
         )}
@@ -608,7 +600,6 @@ export default function GrupoPage() {
           <ProfileModal 
             profile={selectedProfile}
             onClose={() => setSelectedProfile(null)}
-            onImageError={handleImageErrorInternal}
           />
         )}
       </div>
@@ -624,22 +615,19 @@ interface MembersListProps {
   profiles: Profile[]
   topProfiles: Profile[]
   onProfileClick: (profile: Profile) => void
-  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
 }
 
-function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: MembersListProps) {
+function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps) {
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
   
-  // 🔥 FILTRAR: APENAS QUEM NÃO ESTÁ NA ARENA
   const outsideArena = profiles.filter(p => 
     !topProfiles.some(top => top.username.toLowerCase() === p.username.toLowerCase())
   )
   
-  // Se não tem ninguém fora da arena, não mostrar nada
   if (outsideArena.length === 0) {
     return null
   }
@@ -698,12 +686,11 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
               e.currentTarget.style.transform = 'translateX(0)'
             }}
           >
-            {/* Foto */}
             <div style={{ position: 'relative' }}>
               <img 
                 src={safeProfilePic}
                 alt={profile.username}
-                onError={(e) => onImageError(e, profile.username)}
+                onError={(e) => handleImageError(e, profile.username)}
                 style={{
                   width: '50px',
                   height: '50px',
@@ -734,7 +721,6 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
               )}
             </div>
             
-            {/* Info */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 color: '#fff',
@@ -756,7 +742,6 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
               </div>
             </div>
             
-            {/* Seta */}
             <div style={{
               color: 'rgba(0, 191, 255, 0.5)',
               fontSize: '20px',
@@ -773,43 +758,39 @@ function MembersList({ profiles, topProfiles, onProfileClick, onImageError }: Me
 }
 
 // ==========================================
-// ARENA & FÍSICA ATUALIZADA
+// ARENA
 // ==========================================
 
 interface ProfilesArenaProps {
   profiles: Profile[]
-  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   creatorUsername: string
   currentUsername: string
   isUserMember: boolean
 }
 
-function ProfilesArena({ profiles, onImageError, onProfileClick }: ProfilesArenaProps) {
+function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
 
-  // 🔥 CORREÇÃO: Usar useCallback para estabilizar a referência da função
-const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
-  // 🔥 Usar queueMicrotask para evitar warning do React
-  queueMicrotask(() => {
-    setPositions(prev => {
-      const current = prev[username]
-      
-      // Só atualiza se mudou significativamente
-      if (current && 
-          Math.abs(current.x - position.x) < 1 && 
-          Math.abs(current.y - position.y) < 1 &&
-          current.size === (size || current.size)) {
-        return prev
-      }
-      
-      return {
-        ...prev, 
-        [username]: { ...position, size: size || current?.size } 
-      }
+  const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
+    queueMicrotask(() => {
+      setPositions(prev => {
+        const current = prev[username]
+        
+        if (current && 
+            Math.abs(current.x - position.x) < 1 && 
+            Math.abs(current.y - position.y) < 1 &&
+            current.size === (size || current.size)) {
+          return prev
+        }
+        
+        return {
+          ...prev, 
+          [username]: { ...position, size: size || current?.size } 
+        }
+      })
     })
-  })
-}, [])
+  }, [])
 
   return (
     <div className="profiles-arena" style={{
@@ -825,7 +806,6 @@ const updatePosition = useCallback((username: string, position: { x: number; y: 
         <MovingProfile 
           key={profile.username}
           profile={profile}
-          onImageError={onImageError}
           onProfileClick={onProfileClick}
           allPositions={positions}
           updatePosition={updatePosition}
@@ -838,14 +818,13 @@ const updatePosition = useCallback((username: string, position: { x: number; y: 
 
 interface MovingProfileProps {
   profile: Profile
-  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   allPositions: Record<string, { x: number; y: number; size?: number }>
   updatePosition: (username: string, position: { x: number; y: number }, size?: number) => void
   isAdmin: boolean
 }
 
-function MovingProfile({ profile, onImageError, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
+function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
@@ -885,9 +864,6 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     const distance = Math.sqrt(dx * dx + dy * dy)
     return distance < (size1 + size2) / 2
   }
-
-  // 🔥 REMOVIDO: useLayoutEffect que causava loop infinito.
-  // A atualização agora é feita dentro do loop de animação de forma otimizada.
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -1031,9 +1007,7 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
           velocityRef.current = { x: bestDirection.x * baseSpeed, y: bestDirection.y * baseSpeed }
         }
 
-        // 🔥 CORREÇÃO: Restauramos o updatePosition aqui, mas agora seguro (graças ao useCallback do pai)
         updatePosition(profile.username, newPos, imageSize)
-
         return newPos
       })
 
@@ -1044,107 +1018,80 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
     return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
   }, [isHovered, allPositions, profile.username, imageSize, profile.isVerified, updatePosition])
 
-  const handleMouseEnter = (e: React.MouseEvent) => {
-    setIsHovered(true)
-    
-    // Calcular se o tooltip deve aparecer em cima ou embaixo
-    const rect = e.currentTarget.getBoundingClientRect()
-    const spaceTop = rect.top
-    const spaceBottom = window.innerHeight - rect.bottom
-    const vertical = spaceTop < 150 ? 'bottom' : 'top' // Se tiver pouco espaço em cima, mostra embaixo
-    
-    // Calcular horizontal
-    const spaceLeft = rect.left
-    const spaceRight = window.innerWidth - rect.right
+  useEffect(() => {
+    if (!isHovered || !containerRef.current) return
+    const arena = containerRef.current.parentElement
+    if (!arena) return
+    const arenaWidth = arena.offsetWidth
+    const tooltipHeight = 80
+    const tooltipWidth = 150
+    let vertical = 'top'
     let horizontal = 'center'
-    if (spaceLeft < 100) horizontal = 'left'
-    else if (spaceRight < 100) horizontal = 'right'
-
+    if (position.y < tooltipHeight) vertical = 'bottom'
+    if (position.x < tooltipWidth / 2) horizontal = 'left'
+    else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
     setTooltipPosition({ vertical, horizontal })
+  }, [isHovered, position, imageSize])
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+    return num.toString()
   }
 
-  const handleMouseLeave = () => {
-    setIsHovered(false)
+  const getTooltipClass = () => {
+    const classes = ['profile-info']
+    if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
+    if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
+    else if (tooltipPosition.horizontal === 'right') classes.push('profile-info-right')
+    return classes.join(' ')
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="profile-bubble"
-      onClick={() => onProfileClick(profile)}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        position: 'absolute',
-        left: position.x,
-        top: position.y,
-        width: imageSize,
-        height: imageSize,
-        borderRadius: '50%',
-        cursor: 'pointer',
-        zIndex: isHovered ? 100 : 1,
-        transition: isHovered ? 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)' : 'none',
-        transform: isHovered ? 'scale(1.3)' : 'scale(1)',
-        boxShadow: isHovered 
-          ? `0 0 30px ${isAdmin ? 'rgba(255, 215, 0, 0.6)' : 'rgba(0, 191, 255, 0.6)'}` 
-          : `0 4px 10px rgba(0,0,0,0.3)`
-      }}
+    <div 
+      ref={containerRef} 
+      className="profile-pic-container" 
+      style={{ 
+        left: `${position.x}px`, 
+        top: `${position.y}px`, 
+        width: `${imageSize}px`, 
+        height: `${imageSize}px`, 
+        position: 'absolute', 
+        touchAction: 'none',
+        transition: 'none'
+      }} 
+      onMouseEnter={() => setIsHovered(true)} 
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
     >
-      <div style={{
-        width: '100%',
-        height: '100%',
-        borderRadius: '50%',
-        overflow: 'hidden',
-        border: isAdmin ? '3px solid #FFD700' : '2px solid rgba(0, 255, 136, 0.5)',
-        position: 'relative',
-        background: '#000'
-      }}>
-        <img 
-          src={safeProfilePic} 
-          alt={profile.username}
-          onError={(e) => onImageError(e, profile.username)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover'
-          }}
-          draggable={false}
-        />
-      </div>
-
-      {profile.isVerified && (
-        <div style={{
-          position: 'absolute',
-          bottom: '0',
-          right: '0',
-          background: '#00bfff',
-          borderRadius: '50%',
-          width: Math.max(16, imageSize * 0.25),
-          height: Math.max(16, imageSize * 0.25),
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: Math.max(10, imageSize * 0.15),
-          fontWeight: 'bold',
-          border: '2px solid #0a0a0f',
-          zIndex: 2
-        }}>
-          ✓
+      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
+      {isHovered && (
+        <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
+          <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
+            @{profile.username}{isAdmin && <span style={{color: '#FFD700', fontWeight: 'bold', marginLeft: '4px'}}>ADM</span>}
+          </div>
+          <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
-
-      {/* TOOLTIP */}
-      <div 
-        className={`bubble-tooltip ${isHovered ? 'visible' : ''} ${tooltipPosition.vertical} ${tooltipPosition.horizontal}`}
+      <img 
+        src={safeProfilePic} 
+        alt={profile.username} 
+        className="profile-pic" 
+        onError={(e) => handleImageError(e, profile.username)}
+        onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
+        loading="lazy"
         style={{
-           // Ajustes finos de posição baseados no tamanho da bolinha
-           ...(tooltipPosition.vertical === 'top' ? { bottom: '115%' } : { top: '115%' })
+          width: '100%',
+          height: '100%',
+          borderRadius: '50%',
+          objectFit: 'cover',
+          cursor: 'pointer',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          WebkitTouchCallout: 'none'
         }}
-      >
-        <div className="tooltip-username">@{profile.username}</div>
-        <div className="tooltip-followers">{profile.followers >= 1000000 ? (profile.followers / 1000000).toFixed(1) + 'M' : (profile.followers / 1000).toFixed(1) + 'K'}</div>
-        <div className="tooltip-tap">Toque para ver</div>
-      </div>
+      />
     </div>
   )
 }
@@ -1152,11 +1099,9 @@ function MovingProfile({ profile, onImageError, onProfileClick, allPositions, up
 interface ProfileModalProps {
   profile: Profile
   onClose: () => void
-  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
 }
 
-function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
-  // CORREÇÃO 4: Processar URL da imagem
+function ProfileModal({ profile, onClose }: ProfileModalProps) {
   const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
 
   const formatNumber = (num: number): string => {
@@ -1213,7 +1158,7 @@ function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
             src={safeProfilePic} 
             alt={profile.username} 
             className="modal-profile-pic-small" 
-            onError={(e) => onImageError(e, profile.username)}
+            onError={(e) => handleImageError(e, profile.username)}
             loading="lazy"
             style={{
               width: '70px',

@@ -48,17 +48,54 @@ export default function CriarGrupoPage() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const savedProfile = localStorage.getItem('userProfile')
-    if (savedProfile) {
-      try {
-        const profile = JSON.parse(savedProfile)
-        setUserProfile(profile)
-      } catch (error) {
-        console.error('Erro ao carregar perfil:', error)
+useEffect(() => {
+  if (userProfile || searchTerm.length < 2) {
+    setSearchResults([])
+    setShowResults(false)
+    return
+  }
+
+  if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+
+  setIsSearching(true)
+
+  searchTimeoutRef.current = setTimeout(async () => {
+    try {
+      const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
+      const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setSearchResults([{
+          username: data.username,
+          fullName: data.fullName || data.username,
+          profilePic: data.profilePic,
+          followers: data.followers || 0,
+          isVerified: data.isVerified || false,
+          isPrivate: data.isPrivate || false,
+          following: data.following || 0,
+          posts: data.posts || 0,
+          biography: data.biography || ''
+        }])
+        setShowResults(true)
+        setUsernameError('')
+      } else {
+        setSearchResults([])
+        setShowResults(false)
       }
+    } catch (error) {
+      console.error('Erro na busca:', error)
+      setSearchResults([])
+      setShowResults(false)
+    } finally {
+      setIsSearching(false)
     }
-  }, [])
+  }, 500)
+
+  return () => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+  }
+}, [searchTerm, userProfile])
 
   useEffect(() => {
     if (userProfile || searchTerm.length < 2) {

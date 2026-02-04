@@ -95,8 +95,9 @@ async function tryStrategy(username: string, type: 'android' | 'ios' | 'desktop'
     }
 
     // Regex Poderoso (Pega JSON embutido)
-    const jsonMatch = html.match(/<script type="application\/json"[^>]*>({.*?})<\/script>/s) || 
-                      html.match(/<script type="text\/javascript">window._sharedData = ({.*?});<\/script>/s)
+    const jsonMatch = html.match(/<script type="application\/json"[^>]*>({[\s\S]*?})<\/script>/) ||
+                  html.match(/<script type="text\/javascript">window._sharedData = ({[\s\S]*?});<\/script>/)
+//                                                                                   ↑ SOLUÇÃO
 
     // Regex Fallback (Metadados)
     const metaDesc = html.match(/<meta content="([^"]+)" name="description"/)

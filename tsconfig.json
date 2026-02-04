@@ -34,7 +34,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
-, "app/layout.tsx"  ],
+, "app/layout.tsx", "app/api/cron/atualizar-usuarios/route.js"  ],
   "exclude": [
     "node_modules"
   ]
