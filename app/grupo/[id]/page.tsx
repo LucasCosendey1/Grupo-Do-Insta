@@ -163,16 +163,27 @@ export default function GrupoPage() {
   }, [groupId])
 
   // ✅ 4. Verificar Membro
-  useEffect(() => {
-    if (userProfile && profiles.length > 0) {
-      if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
-        setIsUserMember(true)
-        return
-      }
+useEffect(() => {
+  if (userProfile && groupData) {
+    // Admin sempre é membro
+    if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
+      setIsUserMember(true)
+      return
+    }
+    
+    // 🔥 CORREÇÃO: Verificar se é o criador do grupo
+    if (groupData.creator && userProfile.username.toLowerCase() === groupData.creator.toLowerCase()) {
+      setIsUserMember(true)
+      return
+    }
+    
+    // Verificar se está na lista de perfis
+    if (profiles.length > 0) {
       const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
       setIsUserMember(isMember)
     }
-  }, [userProfile, profiles])
+  }
+}, [userProfile, profiles, groupData])
 
   // ✅ 5. Lógica de Busca
   useEffect(() => {
