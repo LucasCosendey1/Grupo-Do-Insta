@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -12,18 +14,17 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // 🔥 A CORREÇÃO FINAL: Forçar tudo para minúsculo
+    const cleanUsername = body.username.toLowerCase().trim()
     
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('🔄 SINCRONIZAR/ATUALIZAR USUÁRIO')
+    console.log('🔄 SINCRONIZAR/ATUALIZAR USUÁRIO (FIX CASE)')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('Username:', body.username)
+    console.log('Username:', cleanUsername)
     console.log('Followers:', body.followers)
-    console.log('Following:', body.following, body.following ? '✅' : '❌')
-    console.log('Posts:', body.posts, body.posts ? '✅' : '❌')
-    console.log('Bio:', body.biography ? `"${body.biography.substring(0, 30)}..."` : 'VAZIO ❌')
-    console.log('')
-
-    // 🔥 UPSERT: Insere OU atualiza se já existir
+    
+    // 🔥 UPSERT: Insere OU atualiza usando o username limpo
     const result = await sql`
       INSERT INTO usuarios (
         username,
@@ -38,8 +39,8 @@ export async function POST(request: NextRequest) {
         instagram_id,
         last_login
       ) VALUES (
-        ${body.username},
-        ${body.fullName || body.username},
+        ${cleanUsername},
+        ${body.fullName || cleanUsername},
         ${body.profilePic || ''},
         ${body.followers || 0},
         ${body.following || 0},
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
         ${body.biography || ''},
         ${body.isVerified || false},
         ${body.isPrivate || false},
-        ${body.instagramId || body.username},
+        ${body.instagramId || cleanUsername},
         NOW()
       )
       ON CONFLICT (username) 
@@ -55,9 +56,9 @@ export async function POST(request: NextRequest) {
         full_name = EXCLUDED.full_name,
         profile_pic = EXCLUDED.profile_pic,
         followers = EXCLUDED.followers,
-        following = EXCLUDED.following,      -- ✅ ATUALIZA
-        posts = EXCLUDED.posts,              -- ✅ ATUALIZA
-        biography = EXCLUDED.biography,      -- ✅ ATUALIZA
+        following = EXCLUDED.following,
+        posts = EXCLUDED.posts,
+        biography = EXCLUDED.biography,
         is_verified = EXCLUDED.is_verified,
         is_private = EXCLUDED.is_private,
         instagram_id = EXCLUDED.instagram_id,
@@ -65,20 +66,14 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `
     
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('✅ DADOS ATUALIZADOS NO BANCO!')
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('Following no banco:', result.rows[0].following)
-    console.log('Posts no banco:', result.rows[0].posts)
-    console.log('Bio no banco:', result.rows[0].biography ? 'SIM ✅' : 'NÃO ❌')
-    console.log('')
-    
+    console.log('✅ DADOS SINCRONIZADOS!')
+
     return NextResponse.json({
       success: true,
       message: 'Dados sincronizados com sucesso',
       data: {
         id: result.rows[0].id,
-        username: result.rows[0].username,
+        username: result.rows[0].username, // Retornará minúsculo agora
         fullName: result.rows[0].full_name,
         followers: result.rows[0].followers,
         following: result.rows[0].following,
@@ -88,22 +83,14 @@ export async function POST(request: NextRequest) {
       }
     })
     
-  } catch (error) {
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('❌ ERRO NA SINCRONIZAÇÃO!')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('Tipo:', error instanceof Error ? error.constructor.name : 'Unknown')
-    console.error('Mensagem:', error instanceof Error ? error.message : 'Erro desconhecido')
-    console.error('')
-    console.error('Stack trace:')
-    console.error(error instanceof Error ? error.stack : 'N/A')
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.error('')
+  } catch (error: any) {
+    console.error('❌ ERRO NA SINCRONIZAÇÃO:', error)
     
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Erro ao sincronizar dados. Tente novamente.' 
+        error: 'Erro ao sincronizar dados.',
+        details: error.message
       },
       { status: 500 }
     )

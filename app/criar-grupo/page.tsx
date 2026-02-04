@@ -1,4 +1,4 @@
-//app/criar-grupo/page.tsx
+// app/criar-grupo/page.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -13,6 +13,10 @@ interface UserProfile {
   profilePic: string
   followers: number
   isVerified: boolean
+  // Campos opcionais para compatibilidade
+  following?: number
+  posts?: number
+  biography?: string
 }
 
 interface ProfileSearchResult {
@@ -48,55 +52,23 @@ export default function CriarGrupoPage() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLDivElement>(null)
 
-useEffect(() => {
-  if (userProfile || searchTerm.length < 2) {
-    setSearchResults([])
-    setShowResults(false)
-    return
-  }
-
-  if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-
-  setIsSearching(true)
-
-  searchTimeoutRef.current = setTimeout(async () => {
-    try {
-      const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
-      const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
-      
-      if (response.ok) {
-        const data = await response.json()
-        setSearchResults([{
-          username: data.username,
-          fullName: data.fullName || data.username,
-          profilePic: data.profilePic,
-          followers: data.followers || 0,
-          isVerified: data.isVerified || false,
-          isPrivate: data.isPrivate || false,
-          following: data.following || 0,
-          posts: data.posts || 0,
-          biography: data.biography || ''
-        }])
-        setShowResults(true)
-        setUsernameError('')
-      } else {
-        setSearchResults([])
-        setShowResults(false)
+  // ✅ 1. CARREGAR USUÁRIO LOGADO AO INICIAR (A CORREÇÃO ESTÁ AQUI)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedProfile = localStorage.getItem('userProfile')
+      if (savedProfile) {
+        try {
+          const parsed = JSON.parse(savedProfile)
+          setUserProfile(parsed)
+          console.log('✅ Usuário carregado do cache:', parsed.username)
+        } catch (error) {
+          console.error('Erro ao ler perfil salvo:', error)
+        }
       }
-    } catch (error) {
-      console.error('Erro na busca:', error)
-      setSearchResults([])
-      setShowResults(false)
-    } finally {
-      setIsSearching(false)
     }
-  }, 500)
+  }, [])
 
-  return () => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-  }
-}, [searchTerm, userProfile])
-
+  // ✅ 2. UseEffect de Busca
   useEffect(() => {
     if (userProfile || searchTerm.length < 2) {
       setSearchResults([])
@@ -135,6 +107,8 @@ useEffect(() => {
         }
       } catch (error) {
         console.error('Erro na busca:', error)
+        setSearchResults([])
+        setShowResults(false)
       } finally {
         setIsSearching(false)
       }
@@ -145,6 +119,7 @@ useEffect(() => {
     }
   }, [searchTerm, userProfile])
 
+  // ✅ 3. Click Outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
@@ -161,12 +136,23 @@ useEffect(() => {
       fullName: profile.fullName,
       profilePic: profile.profilePic,
       followers: profile.followers,
-      isVerified: profile.isVerified
+      isVerified: profile.isVerified,
+      following: profile.following,
+      posts: profile.posts,
+      biography: profile.biography
     }
     setUserProfile(simplified)
+    // Atualiza o localStorage também para manter a consistência
     localStorage.setItem('userProfile', JSON.stringify(simplified))
     setSearchTerm('')
     setShowResults(false)
+  }
+
+  const handleRemoveProfile = () => {
+    setUserProfile(null)
+    setSearchTerm('')
+    // Não removemos do localStorage aqui, apenas do estado da tela de criação
+    // caso ele queira criar um grupo para outra pessoa
   }
 
   const handleCreateGroup = async () => {
@@ -195,23 +181,21 @@ useEffect(() => {
       
       if (data.success) {
         const identifier = data.slug || data.groupId
+        console.log('✅ Redirecionando para:', `/grupo/${identifier}`)
         router.push(`/grupo/${identifier}`)
-      } else {
-        throw new Error('Resposta inválida da API')
       }
     } catch (error) {
-      console.error('❌ Erro:', error)
-      alert('Erro ao criar grupo: ' + (error instanceof Error ? error.message : 'Tente novamente'))
-    } finally {
+      console.error('Erro ao criar grupo:', error)
+      alert('Erro ao criar grupo. Tente novamente.')
       setIsLoading(false)
     }
   }
 
+  // Lógica de cores
   const isNameFilled = groupName.trim().length > 0
   const isProfileSelected = userProfile !== null
 
   const nameInputColor = isNameFilled ? NEON_BLUE : NEON_GREEN
-
   let creatorInputColor = NEON_GREEN 
 
   if (!isNameFilled) {
@@ -264,7 +248,6 @@ useEffect(() => {
               <span className="label-icon">👤</span> Criador do Grupo
             </label>
 
-            {/* 🔥 CORREÇÃO 1: Foto do Perfil Selecionado */}
             {userProfile ? (
               (() => {
                 const safeProfilePic = processInstagramImageUrl(userProfile.profilePic, userProfile.username)
@@ -279,7 +262,7 @@ useEffect(() => {
                     boxShadow: `0 0 15px ${creatorInputColor}33`,
                     transition: 'all 0.3s ease'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
                       <img 
                         src={safeProfilePic}
                         alt={userProfile.username}
@@ -287,16 +270,32 @@ useEffect(() => {
                         style={{
                           width: '40px', height: '40px', borderRadius: '50%',
                           border: `2px solid ${creatorInputColor}`,
-                          objectFit: 'cover'
+                          objectFit: 'cover',
+                          flexShrink: 0
                         }}
                       />
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ color: creatorInputColor, fontWeight: 'bold', fontSize: '16px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        <span style={{ color: creatorInputColor, fontWeight: 'bold', fontSize: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           @{userProfile.username}
                         </span>
                         <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Criador</span>
                       </div>
                     </div>
+                    
+                    <button 
+                      onClick={handleRemoveProfile}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#ff6b6b',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '5px'
+                      }}
+                      title="Trocar usuário"
+                    >
+                      ✕
+                    </button>
                   </div>
                 )
               })()
@@ -325,7 +324,6 @@ useEffect(() => {
                   </div>
                 )}
 
-                {/* 🔥 CORREÇÃO 2: Dropdown de Resultados */}
                 {showResults && searchResults.length > 0 && (
                   <div className="search-results-dropdown">
                     {searchResults.map((profile) => {

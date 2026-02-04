@@ -13,7 +13,7 @@ import '../../globals.css'
 const MAX_ARENA_MEMBERS = 15 // 🔥 LIMITE DA ARENA (Criador + 14 melhores)
 
 // ==========================================
-// INTERFACES
+// INTERFACES ATUALIZADAS
 // ==========================================
 
 interface Profile {
@@ -44,13 +44,18 @@ interface GroupData {
   createdAt: string
 }
 
+// 🔥 FIX: Interface atualizada para incluir dados completos
 interface UserProfile {
   username: string
   fullName: string
   profilePic: string
   followers: number
+  following?: number // Novo
+  posts?: number     // Novo
+  biography?: string // Novo
   isVerified: boolean
 }
+
 
 export default function GrupoPage() {
   const router = useRouter()
@@ -60,7 +65,7 @@ export default function GrupoPage() {
   
   // Estados de Dados do Grupo
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [topProfiles, setTopProfiles] = useState<Profile[]>([]) // 🔥 TOP 15 PARA ARENA
+  const [topProfiles, setTopProfiles] = useState<Profile[]>([]) 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [groupData, setGroupData] = useState<GroupData | null>(null)
   const [isLoadingGroup, setIsLoadingGroup] = useState(true)
@@ -70,13 +75,13 @@ export default function GrupoPage() {
   const [isUserMember, setIsUserMember] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   
-  // Estados de Busca (Login Embutido)
+  // Estados de Busca
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<Profile[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Estados de UI (Menu)
+  // Estados de UI
   const [showMenu, setShowMenu] = useState(false)
   const [showShareOptions, setShowShareOptions] = useState(false)
   const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
@@ -86,7 +91,6 @@ export default function GrupoPage() {
   // ✅ 1. Validação de Rota
   useEffect(() => {
     if (!groupId) {
-      console.error('❌ groupId está undefined!')
       router.push('/')
       return
     }
@@ -109,43 +113,39 @@ export default function GrupoPage() {
 
   // ✅ 3. Carregar Grupo
   useEffect(() => {
-    if (!groupId) return
-    
-    async function loadGroup() {
-      try {
-        setIsLoadingGroup(true)
+  if (!groupId) return
+  
+  async function loadGroup() {
+    try {
+      setIsLoadingGroup(true)
+      
+      const response = await fetch(`/api/grupos/${groupId}`, { 
+        cache: 'no-store' 
+      })
+      
+      if (!response.ok) {
+        throw new Error('Grupo não encontrado')
+      }
+      
+      const data = await response.json()
+      
+      if (data.success && data.group) {
+        setGroupData(data.group)
         
-        const response = await fetch(`/api/grupos/${groupId}`, { 
-          cache: 'no-store' 
-        })
-        
-        if (!response.ok) {
-          throw new Error('Grupo não encontrado')
-        }
-        
-        const data = await response.json()
-        
-        if (data.success && data.group) {
-          setGroupData(data.group)
-          
-          const allProfiles = data.group.profiles || []
-          setProfiles(allProfiles)
+        const allProfiles = data.group.profiles || []
+        setProfiles(allProfiles)
           
           // Separar criador dos outros
           const creatorProfile = allProfiles.find((p: Profile) => p.isCreator === true)
           const nonCreators = allProfiles.filter((p: Profile) => p.isCreator !== true)
           
-          // Ordenar não-criadores por seguidores (maior primeiro)
+          // Ordenar não-criadores por seguidores
           const sortedNonCreators = [...nonCreators].sort((a, b) => b.followers - a.followers)
           
-          // Montar arena: Criador + (MAX - 1) melhores
+          // Montar arena
           const arenaMembers: Profile[] = []
+          if (creatorProfile) arenaMembers.push(creatorProfile)
           
-          if (creatorProfile) {
-            arenaMembers.push(creatorProfile)
-          }
-          
-          // Pegar os (MAX - 1) melhores não-criadores
           const remainingSlots = MAX_ARENA_MEMBERS - (creatorProfile ? 1 : 0)
           const topNonCreators = sortedNonCreators.slice(0, remainingSlots)
           
@@ -162,28 +162,36 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // ✅ 4. Verificar Membro
-useEffect(() => {
-  if (userProfile && groupData) {
-    // Admin sempre é membro
-    if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
-      setIsUserMember(true)
-      return
+  // ✅ 4. Verificar Membro (CORRIGIDO - SEM DUPLICAÇÃO)
+  useEffect(() => {
+    if (userProfile && groupData) {
+      // Admin sempre é membro
+      if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
+        setIsUserMember(true)
+        return
+      }
+      
+      // Criador é membro
+      if (groupData.creator && userProfile.username.toLowerCase() === groupData.creator.toLowerCase()) {
+        setIsUserMember(true)
+        return
+      }
+      
+      // Verificar lista
+      if (profiles.length > 0) {
+        // Log seguro
+        profiles.forEach((p, index) => {
+            const pName = p.username || 'UNDEFINED'
+            const uName = userProfile.username || 'UNDEFINED'
+            // console.log(`[${index}] ${pName} vs ${uName}`)
+        })
+        
+        const isMember = profiles.some(p => p.username && p.username.toLowerCase() === userProfile.username.toLowerCase())
+        console.log('Está na lista de perfis?', isMember)
+        setIsUserMember(isMember)
+      }
     }
-    
-    // 🔥 CORREÇÃO: Verificar se é o criador do grupo
-    if (groupData.creator && userProfile.username.toLowerCase() === groupData.creator.toLowerCase()) {
-      setIsUserMember(true)
-      return
-    }
-    
-    // Verificar se está na lista de perfis
-    if (profiles.length > 0) {
-      const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
-      setIsUserMember(isMember)
-    }
-  }
-}, [userProfile, profiles, groupData])
+  }, [userProfile, profiles, groupData])
 
   // ✅ 5. Lógica de Busca
   useEffect(() => {
@@ -228,7 +236,10 @@ useEffect(() => {
         fullName: profileData.fullName,
         profilePic: profileData.profilePic,
         followers: profileData.followers,
-        isVerified: profileData.isVerified
+        isVerified: profileData.isVerified,
+        following: profileData.following || 0,
+        posts: profileData.posts || 0,
+        biography: profileData.biography || ''
     }
     localStorage.setItem('userProfile', JSON.stringify(userToSave))
     setUserProfile(userToSave)
@@ -237,10 +248,10 @@ useEffect(() => {
 
     setIsJoining(true)
     try {
-        fetch('/api/usuarios/sincronizar', {
+        await fetch('/api/usuarios/sincronizar', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(profileData)
+            body: JSON.stringify(userToSave)
         })
 
         const res = await fetch('/api/grupos/adicionar-membro', {
@@ -278,16 +289,15 @@ useEffect(() => {
         fullName: userProfile.fullName,
         profilePic: userProfile.profilePic,
         followers: userProfile.followers,
-        following: 0,
-        posts: 0,
-        biography: '',
+        following: userProfile.following || 0,
+        posts: userProfile.posts || 0,
+        biography: userProfile.biography || '',
         isPrivate: false,
         isVerified: userProfile.isVerified
       }
       
       await handleLoginAndJoin(profileDataCompleto)
     } catch (e) {
-      console.error('❌ Erro ao entrar no grupo:', e)
       alert('Erro ao entrar no grupo.')
     } finally {
       setIsJoining(false)
@@ -337,7 +347,6 @@ useEffect(() => {
     }
   }
 
-  // --- RENDERS ---
   if (!isMounted) return null
 
   if (isLoadingGroup) {
@@ -405,7 +414,7 @@ useEffect(() => {
               ) : (
                 <div style={{display:'flex', flexDirection: 'column', alignItems: 'center', marginTop: 20, width: '100%', padding: '0 10px', boxSizing: 'border-box'}}>
                     <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>
-                       Convide seus amigos e ajude o grupo a decolar! 🚀
+                        Convide seus amigos e ajude o grupo a decolar! 🚀
                     </p>
                     
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
@@ -497,7 +506,7 @@ useEffect(() => {
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
-                         {isSearching && (
+                          {isSearching && (
                             <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
                         )}
                     </div>
@@ -618,8 +627,10 @@ useEffect(() => {
   )
 }
 
+
+
 // ==========================================
-// 🔥 COMPONENTE: LISTA DE MEMBROS
+// 🔥 COMPONENTE: LISTA DE MEMBROS (Cole daqui para baixo)
 // ==========================================
 
 interface MembersListProps {

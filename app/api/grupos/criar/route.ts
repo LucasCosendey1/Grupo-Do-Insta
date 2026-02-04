@@ -120,28 +120,31 @@ export async function POST(request: NextRequest) {
 
     // 5️⃣ ADICIONAR CRIADOR COMO MEMBRO (ADMIN)
     console.log('👥 Adicionando criador à tabela de membros...')
-    await sql`
-      INSERT INTO grupo_membros (
-        grupo_id, username, full_name, profile_pic, followers, 
-        following, posts, biography, is_private, is_verified, added_at
-      )
-      VALUES (
-        ${groupId},
-        ${creatorData.username},
-        ${creatorData.fullName},
-        ${creatorData.profilePic},
-        ${creatorData.followers},
-        ${creatorData.following || 0},
-        ${creatorData.posts || 0},
-        ${creatorData.biography || ''},
-        ${creatorData.isPrivate || false},
-        ${creatorData.isVerified || false},
-        NOW()
-      )
-    `
+console.log(`📦 Grupo ID para inserção: ${groupId}`)
+console.log(`👤 Username: ${creatorData.username}`)
 
+await sql`
+  INSERT INTO grupo_membros (
+    grupo_id, username, full_name, profile_pic, followers, 
+    following, posts, biography, is_private, is_verified, added_at
+  )
+  VALUES (
+    ${groupId},
+    ${creatorData.username},
+    ${creatorData.fullName || creatorData.username},
+    ${creatorData.profilePic || ''},
+    ${creatorData.followers || 0},
+    ${creatorData.following || 0},
+    ${creatorData.posts || 0},
+    ${creatorData.biography || ''},
+    ${creatorData.isPrivate || false},
+    ${creatorData.isVerified || false},
+    NOW()
+  )
+`
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     console.log('🎉 GRUPO CRIADO COM SUCESSO!')
+    console.log('✅ Criador adicionado com sucesso!')
     console.log(`🆔 ID: ${groupId} | Slug: ${slug}`)
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
