@@ -11,69 +11,82 @@ export async function GET(
   const identifier = params.id
 
   console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-  console.log(`🔍 [API] Buscando grupo: ${identifier}`)
+  console.log(`🔍 [API] Buscando grupo (Modo Robusto): ${identifier}`)
 
   try {
-    // 🔥 CORREÇÃO MESTRA:
-    // 1. COALESCE: Se não achar dados na tabela 'usuarios' (u), usa os dados da tabela 'grupo_membros' (gm).
-    // 2. REMOVIDO O FILTER: Não excluímos mais ninguém. Se está no grupo, aparece na lista.
-    
-    const result = await sql`
-      SELECT 
-        g.*,
-        (SELECT COUNT(*) FROM grupo_membros WHERE grupo_id = g.id) as member_count,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'username', COALESCE(u.username, gm.username), 
-              'fullName', COALESCE(u.full_name, gm.full_name, gm.username),
-              'profilePic', COALESCE(u.profile_pic, gm.profile_pic, ''),
-              'followers', COALESCE(u.followers, gm.followers, 0),
-              'following', COALESCE(u.following, gm.following, 0),
-              'posts', COALESCE(u.posts, gm.posts, 0),
-              'biography', COALESCE(u.biography, gm.biography, ''),
-              'isVerified', COALESCE(u.is_verified, gm.is_verified, false),
-              'isPrivate', COALESCE(u.is_private, gm.is_private, false),
-              'isCreator', (CASE WHEN LOWER(gm.username) = LOWER(g.creator_username) THEN true ELSE false END)
-            ) ORDER BY COALESCE(u.followers, gm.followers, 0) DESC
-          ), 
-          '[]'
-        ) as profiles
-      FROM grupos g
-      LEFT JOIN grupo_membros gm ON g.id = gm.grupo_id
-      LEFT JOIN usuarios u ON LOWER(gm.username) = LOWER(u.username)
-      WHERE g.id = ${identifier} OR g.slug = ${identifier}
-      GROUP BY g.id
+    // 1️⃣ BUSCAR O GRUPO
+    const grupoResult = await sql`
+      SELECT * FROM grupos 
+      WHERE id = ${identifier} OR slug = ${identifier}
+      LIMIT 1
     `
 
-    if (result.rows.length === 0) {
+    if (grupoResult.rows.length === 0) {
       console.log('❌ [API] Grupo não encontrado')
       return NextResponse.json({ error: 'Grupo não encontrado' }, { status: 404 })
     }
 
-    const groupRaw = result.rows[0]
+    const grupo = grupoResult.rows[0]
+    const realGroupId = grupo.id
 
-    const group = {
-      id: groupRaw.id,
-      slug: groupRaw.slug,
-      name: groupRaw.name,
+    // 2️⃣ BUSCAR OS MEMBROS (Consulta Simples e Direta)
+    // Sem JOIN complexo que pode ocultar dados. Pegamos tudo da tabela de ligação.
+    const membrosResult = await sql`
+      SELECT 
+        gm.username, 
+        gm.full_name, 
+        gm.profile_pic, 
+        gm.followers,
+        gm.following,
+        gm.posts,
+        gm.biography,
+        gm.is_verified,
+        gm.is_private,
+        u.instagram_id -- Tenta pegar info extra se tiver
+      FROM grupo_membros gm
+      LEFT JOIN usuarios u ON LOWER(gm.username) = LOWER(u.username)
+      WHERE gm.grupo_id = ${realGroupId}
+      ORDER BY gm.followers DESC
+    `
+
+    console.log(`👥 Membros brutos encontrados no banco: ${membrosResult.rows.length}`)
+
+    // 3️⃣ MONTAR A RESPOSTA
+    const profiles = membrosResult.rows.map(row => ({
+      username: row.username,
+      fullName: row.full_name || row.username,
+      profilePic: row.profile_pic || '',
+      followers: Number(row.followers || 0),
+      following: Number(row.following || 0),
+      posts: Number(row.posts || 0),
+      biography: row.biography || '',
+      isVerified: row.is_verified || false,
+      isPrivate: row.is_private || false,
+      isCreator: row.username.toLowerCase() === grupo.creator_username.toLowerCase()
+    }))
+
+    const responseData = {
+      id: grupo.id,
+      slug: grupo.slug,
+      name: grupo.name,
       icon: {
-        emoji: groupRaw.icon_emoji,
-        name: groupRaw.icon_name
+        emoji: grupo.icon_emoji,
+        name: grupo.icon_name
       },
-      creator: groupRaw.creator_username,
-      memberCount: parseInt(groupRaw.member_count),
-      profiles: groupRaw.profiles || [], 
-      createdAt: groupRaw.created_at
+      creator: grupo.creator_username,
+      memberCount: profiles.length, // Contagem real baseada na array
+      profiles: profiles,
+      createdAt: grupo.created_at
     }
 
-    console.log(`✅ [API] Grupo encontrado: ${group.name}`)
-    console.log(`👥 Membros carregados: ${group.profiles.length}`)
+    console.log(`✅ [API] Retornando grupo com ${profiles.length} perfis.`)
     
-    // Debug para ver quem está vindo
-    group.profiles.forEach((p: any) => console.log(`   - ${p.username}`))
+    // Debug para provar que o 'ata' está indo
+    const temAta = profiles.find(p => p.username.toLowerCase() === 'ata')
+    if (temAta) console.log('   🎉 O usuário "ata" ESTÁ no payload de resposta!')
+    else console.log('   ⚠️ O usuário "ata" AINDA NÃO apareceu. Verifique o DB.')
 
-    return NextResponse.json({ success: true, group })
+    return NextResponse.json({ success: true, group: responseData })
 
   } catch (error: any) {
     console.error('❌ [API] Erro interno:', error)
