@@ -107,4 +107,4 @@ export async function GET(request) {
     console.error('❌ ERRO GERAL NO CRON:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-}marketeiroconfesso
+}
