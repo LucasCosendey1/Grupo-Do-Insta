@@ -10,10 +10,10 @@ import '../../globals.css'
 // ==========================================
 // CONSTANTES
 // ==========================================
-const MAX_ARENA_MEMBERS = 15 // 🔥 LIMITE DA ARENA (Criador + 14 melhores)
+const MAX_ARENA_MEMBERS = 15 
 
 // ==========================================
-// INTERFACES ATUALIZADAS
+// INTERFACES
 // ==========================================
 
 interface Profile {
@@ -44,18 +44,16 @@ interface GroupData {
   createdAt: string
 }
 
-// 🔥 FIX: Interface atualizada para incluir dados completos
 interface UserProfile {
   username: string
   fullName: string
   profilePic: string
   followers: number
-  following?: number // Novo
-  posts?: number     // Novo
-  biography?: string // Novo
+  following?: number
+  posts?: number
+  biography?: string
   isVerified: boolean
 }
-
 
 export default function GrupoPage() {
   const router = useRouter()
@@ -63,7 +61,7 @@ export default function GrupoPage() {
   
   const groupId = (params?.id as string) || ''
   
-  // Estados de Dados do Grupo
+  // Estados de Dados
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [topProfiles, setTopProfiles] = useState<Profile[]>([]) 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
@@ -74,86 +72,68 @@ export default function GrupoPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isUserMember, setIsUserMember] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
   
-  // Estados de Busca
+  // Estados de Busca e UI
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<Profile[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Estados de UI
   const [showMenu, setShowMenu] = useState(false)
   const [showShareOptions, setShowShareOptions] = useState(false)
   const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = useState(false)
 
-  // ✅ 1. Validação de Rota
-  useEffect(() => {
-    if (!groupId) {
-      router.push('/')
-      return
-    }
-  }, [groupId, router])
-
-  // ✅ 2. Inicialização
+  // 1. Inicialização
   useEffect(() => {
     setIsMounted(true)
     if (typeof window !== 'undefined') {
       const savedProfile = localStorage.getItem('userProfile')
       if (savedProfile) {
-        try {
-          setUserProfile(JSON.parse(savedProfile))
-        } catch (error) {
-          console.error(error)
-        }
+        try { setUserProfile(JSON.parse(savedProfile)) } catch (e) { console.error(e) }
       }
     }
   }, [])
 
-  // ✅ 3. Carregar Grupo
+  // 2. Carregar Grupo (COM ANTI-CACHE)
   useEffect(() => {
-  if (!groupId) return
-  
-  async function loadGroup() {
-    try {
-      setIsLoadingGroup(true)
-      
-      const response = await fetch(`/api/grupos/${groupId}`, { 
-        cache: 'no-store' 
-      })
-      
-      if (!response.ok) {
-        throw new Error('Grupo não encontrado')
-      }
-      
-      const data = await response.json()
-      
-      if (data.success && data.group) {
-        setGroupData(data.group)
+    if (!groupId) return
+    
+    async function loadGroup() {
+      try {
+        setIsLoadingGroup(true)
+        // 🔥 Timestamp para quebrar cache do fetch
+        const response = await fetch(`/api/grupos/${groupId}?t=${new Date().getTime()}`, { 
+          cache: 'no-store',
+          headers: { 'Pragma': 'no-cache' }
+        })
         
-        const allProfiles = data.group.profiles || []
-        setProfiles(allProfiles)
+        if (!response.ok) throw new Error('Grupo não encontrado')
+        
+        const data = await response.json()
+        
+        if (data.success && data.group) {
+          setGroupData(data.group)
+          const allProfiles = data.group.profiles || []
+          setProfiles(allProfiles)
           
-          // Separar criador dos outros
+          // Lógica da Arena
           const creatorProfile = allProfiles.find((p: Profile) => p.isCreator === true)
           const nonCreators = allProfiles.filter((p: Profile) => p.isCreator !== true)
-          
-          // Ordenar não-criadores por seguidores
           const sortedNonCreators = [...nonCreators].sort((a, b) => b.followers - a.followers)
           
-          // Montar arena
           const arenaMembers: Profile[] = []
           if (creatorProfile) arenaMembers.push(creatorProfile)
           
           const remainingSlots = MAX_ARENA_MEMBERS - (creatorProfile ? 1 : 0)
-          const topNonCreators = sortedNonCreators.slice(0, remainingSlots)
+          arenaMembers.push(...sortedNonCreators.slice(0, remainingSlots))
           
-          arenaMembers.push(...topNonCreators)
           setTopProfiles(arenaMembers)
         }
       } catch (error) {
-        console.error('❌ Erro ao carregar grupo:', error)
+        console.error('❌ Erro ao carregar:', error)
+        setErrorMsg('Grupo não encontrado')
       } finally {
         setIsLoadingGroup(false)
       }
@@ -162,44 +142,20 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // ✅ 4. Verificar Membro (CORRIGIDO - SEM DUPLICAÇÃO)
+  // 3. Verificar Membro (Confiança na Lista)
   useEffect(() => {
-    if (userProfile && groupData) {
-      // Admin sempre é membro
-      if (userProfile.username.toLowerCase() === 'instadogrupo.oficial') {
-        setIsUserMember(true)
-        return
-      }
-      
-      // Criador é membro
-      if (groupData.creator && userProfile.username.toLowerCase() === groupData.creator.toLowerCase()) {
-        setIsUserMember(true)
-        return
-      }
-      
-      // Verificar lista
-      if (profiles.length > 0) {
-        // Log seguro
-        profiles.forEach((p, index) => {
-            const pName = p.username || 'UNDEFINED'
-            const uName = userProfile.username || 'UNDEFINED'
-            // console.log(`[${index}] ${pName} vs ${uName}`)
-        })
-        
-        const isMember = profiles.some(p => p.username && p.username.toLowerCase() === userProfile.username.toLowerCase())
-        console.log('Está na lista de perfis?', isMember)
-        setIsUserMember(isMember)
-      }
+    if (userProfile && profiles.length > 0) {
+      // Verifica se o username está na lista vinda do banco
+      const isMember = profiles.some(p => p.username && p.username.toLowerCase() === userProfile.username.toLowerCase())
+      setIsUserMember(isMember)
+    } else {
+      setIsUserMember(false)
     }
-  }, [userProfile, profiles, groupData])
+  }, [userProfile, profiles])
 
-  // ✅ 5. Lógica de Busca
+  // 4. Busca de Usuário
   useEffect(() => {
-    if (searchTerm.length < 2) {
-      setSearchResults([])
-      return
-    }
-
+    if (searchTerm.length < 2) { setSearchResults([]); return }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
 
     setIsSearching(true)
@@ -207,23 +163,13 @@ export default function GrupoPage() {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
         const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          setSearchResults([data]) 
-        } else {
-          setSearchResults([])
-        }
-      } catch (error) {
-        setSearchResults([])
-      } finally {
-        setIsSearching(false)
-      }
+        if (response.ok) setSearchResults([await response.json()]) 
+        else setSearchResults([])
+      } catch (error) { setSearchResults([]) } 
+      finally { setIsSearching(false) }
     }, 600)
 
-    return () => {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
-    }
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current) }
   }, [searchTerm])
 
   // ==========================================
@@ -231,91 +177,91 @@ export default function GrupoPage() {
   // ==========================================
 
   const handleLoginAndJoin = async (profileData: any) => {
-    const userToSave = {
-        username: profileData.username,
-        fullName: profileData.fullName,
-        profilePic: profileData.profilePic,
-        followers: profileData.followers,
-        isVerified: profileData.isVerified,
-        following: profileData.following || 0,
-        posts: profileData.posts || 0,
-        biography: profileData.biography || ''
+    // 1. Preparar Dados
+    let finalData = profileData
+    
+    // Se vier pobre, tenta usar o que está no cache local
+    if ((!profileData.followers || profileData.followers === 0) && userProfile?.username === profileData.username) {
+        finalData = { ...userProfile, ...profileData }
     }
+
+    const userToSave = {
+        username: finalData.username,
+        fullName: finalData.fullName || finalData.username,
+        profilePic: finalData.profilePic || '',
+        followers: Number(finalData.followers) || 0,
+        isVerified: finalData.isVerified || false,
+        following: Number(finalData.following) || 0,
+        posts: Number(finalData.posts) || 0,
+        biography: finalData.biography || ''
+    }
+
+    // 2. Salva no Cache Local
     localStorage.setItem('userProfile', JSON.stringify(userToSave))
     setUserProfile(userToSave)
     setSearchTerm('')
     setSearchResults([])
 
     setIsJoining(true)
-    try {
-        await fetch('/api/usuarios/sincronizar', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(userToSave)
-        })
 
+
+
+
+    try {
+        // 3. Chama a API
         const res = await fetch('/api/grupos/adicionar-membro', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 groupId: groupId,
-                username: profileData.username,
-                profileData: profileData
+                username: userToSave.username,
+                profileData: userToSave
             })
         })
 
-        const result = await res.json()
-        
-        if (!res.ok && !result.error?.includes('já está no grupo')) {
-            throw new Error(result.error)
+        if (!res.ok) {
+            const errorData = await res.json()
+            throw new Error(errorData.error || 'Erro ao entrar')
         }
 
-        window.location.reload()
+        // 🔥 A MUDANÇA É AQUI:
+        // Em vez de window.location.reload(), use isso:
+        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
 
     } catch (err) {
-        alert('Erro ao entrar no grupo.')
-    } finally {
+        console.error(err)
+        alert('Erro ao entrar no grupo. Tente novamente.')
         setIsJoining(false)
     }
-  }
+  } // <--- ADICIONE ESTA CHAVE AQUI!
 
   const handleJoinOnly = async () => {
     if (!userProfile) return
-    setIsJoining(true)
-    
-    try {
-      const profileDataCompleto = {
-        username: userProfile.username,
-        fullName: userProfile.fullName,
-        profilePic: userProfile.profilePic,
-        followers: userProfile.followers,
-        following: userProfile.following || 0,
-        posts: userProfile.posts || 0,
-        biography: userProfile.biography || '',
-        isPrivate: false,
-        isVerified: userProfile.isVerified
-      }
-      
-      await handleLoginAndJoin(profileDataCompleto)
-    } catch (e) {
-      alert('Erro ao entrar no grupo.')
-    } finally {
-      setIsJoining(false)
-    }
+    await handleLoginAndJoin(userProfile)
   }
 
   const handleLeaveGroup = async () => {
     if (!userProfile || !window.confirm('Sair do grupo?')) return
     setShowMenu(false)
-    await fetch('/api/grupos/sair', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId, username: userProfile.username })
-    })
     
-    window.location.reload()
+    try {
+        await fetch('/api/grupos/sair', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId, username: userProfile.username })
+        })
+        
+        // 🔥 A MUDANÇA É AQUI:
+        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
+        
+    } catch (error) {
+        console.error('Erro ao sair', error)
+        // Fallback
+        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
+    }
   }
 
+  // Helpers UI
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -327,7 +273,6 @@ export default function GrupoPage() {
   const handleCopyMessage = () => {
     const link = `${window.location.origin}/grupo/${groupId}`
     const msg = `🚀 Entre no meu grupo "${groupData?.name}"!\n\n${link}`
-    
     navigator.clipboard.writeText(msg)
     setCopiedType('message')
     setTimeout(() => setCopiedType(null), 2000)
@@ -337,63 +282,35 @@ export default function GrupoPage() {
     if (typeof navigator.share === 'function' && groupData) {
         const link = `${window.location.origin}/grupo/${groupId}`
         const msg = `✨ Convite Especial!\nVenha fazer parte do "${groupData.name}" 🚀\n\n👥 ${profiles.length} Membros\n📊 ${formatNumber(getTotalFollowers())} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
-        
-        navigator.share({ 
-            title: `Convite: ${groupData.name}`, 
-            text: msg
-          })
+        navigator.share({ title: `Convite: ${groupData.name}`, text: msg })
     } else {
         handleCopyMessage()
     }
   }
 
   if (!isMounted) return null
-
-  if (isLoadingGroup) {
-    return (
-      <div className="container">
-        <div className="card grupo-card">
-          <div className="loading-state">
-            <div className="spinner"></div>
-            <p>Carregando...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  if (errorMsg) return <div className="container"><div className="card" style={{padding:40, textAlign:'center'}}><h3>{errorMsg}</h3><Link href="/" className="btn">Voltar</Link></div></div>
+  if (isLoadingGroup) return <div className="container"><div className="card"><div className="loading-state"><div className="spinner"></div><p>Carregando...</p></div></div></div>
 
   return (
     <div className="container">
       <div className="card grupo-card">
         
       {/* HEADER TOP */}
-      <div className="grupo-header" style={{ 
-        display: 'flex', 
-        justifyContent: isUserMember ? 'space-between' : 'center',
-        alignItems: 'center', 
-        width: '100%',
-        padding: '0 10px'
-      }}>
+      <div className="grupo-header" style={{ display: 'flex', justifyContent: isUserMember ? 'space-between' : 'center', alignItems: 'center', width: '100%', padding: '0 10px' }}>
         {isUserMember && (
-          <Link href="/" className="btn-back-large">
-            <span className="back-arrow-large">←</span><span>Voltar</span>
-          </Link>
+          <Link href="/" className="btn-back-large"><span className="back-arrow-large">←</span><span>Voltar</span></Link>
         )}
-
         {isUserMember && (
           <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
             <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
             {showMenu && (
               <div className="dropdown-menu-top" style={{ top: '100%', right: 0, marginTop: '8px', zIndex: 50 }}>
-                <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>
-                  Compartilhar {showShareOptions ? '▼' : '▶'}
-                </button>
+                <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>Compartilhar</button>
                 {showShareOptions && (
                   <div className="share-submenu">
                     <button className="submenu-item" onClick={handleNativeShare}>Nativo</button>
-                    <button className="submenu-item" onClick={handleCopyMessage}>
-                      {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
-                    </button>
+                    <button className="submenu-item" onClick={handleCopyMessage}>{copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}</button>
                   </div>
                 )}
                 <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>🚪 Sair</button>
@@ -407,76 +324,13 @@ export default function GrupoPage() {
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
-          
           <div className="subtitle" style={{marginTop: 5}}>
-              {!isUserMember ? (
-                'Para entrar no grupo, informe seu Instagram:'
-              ) : (
+              {!isUserMember ? ( 'Para entrar no grupo, informe seu Instagram:' ) : (
                 <div style={{display:'flex', flexDirection: 'column', alignItems: 'center', marginTop: 20, width: '100%', padding: '0 10px', boxSizing: 'border-box'}}>
-                    <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>
-                        Convide seus amigos e ajude o grupo a decolar! 🚀
-                    </p>
-                    
+                    <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>Convide seus amigos e ajude o grupo a decolar! 🚀</p>
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
-                        
-                        <button 
-                          onClick={handleCopyMessage} 
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.06)',
-                            border: '1px solid rgba(255, 255, 255, 0.08)', 
-                            color: 'rgba(255, 255, 255, 0.4)',
-                            padding: '10px 16px',
-                            borderRadius: '50px', 
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            fontWeight: '500',
-                            transition: 'all 0.2s ease',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0
-                          }}
-                          onMouseOver={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
-                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'
-                          }}
-                          onMouseOut={(e) => {
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'
-                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'
-                          }}
-                        >
-                            <span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}
-                        </button>
-
-                        <button 
-                          onClick={handleNativeShare} 
-                          style={{
-                            background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)', 
-                            border: 'none',
-                            color: '#000', 
-                            padding: '12px 28px', 
-                            borderRadius: '50px', 
-                            fontSize: '15px', 
-                            cursor: 'pointer',
-                            fontWeight: '800', 
-                            boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', 
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '7px',
-                            transition: 'all 0.2s ease',
-                            flex: 1,
-                            minWidth: '160px',
-                            maxWidth: '240px',
-                            justifyContent: 'center',
-                            whiteSpace: 'nowrap'
-                          }}
-                          onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
-                          onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                        >
-                              Compartilhar Grupo
-                        </button>
-
+                        <button onClick={handleCopyMessage} style={{background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.08)', color: 'rgba(255, 255, 255, 0.4)', padding: '10px 16px', borderRadius: '50px', fontSize: '13px', cursor: 'pointer', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '5px'}}><span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}</button>
+                        <button onClick={handleNativeShare} style={{background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)', border: 'none', color: '#000', padding: '12px 28px', borderRadius: '50px', fontSize: '15px', cursor: 'pointer', fontWeight: '800', boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', display: 'flex', alignItems: 'center', gap: '7px', flex: 1, minWidth: '160px', maxWidth: '240px', justifyContent: 'center'}}>Compartilhar Grupo</button>
                     </div>
                 </div>
               )}
@@ -489,60 +343,21 @@ export default function GrupoPage() {
                 <div className="input-group" style={{ position: 'relative' }}>
                     <div className="input-wrapper">
                         <span className="input-prefix" style={{position:'absolute', left:15, top:'50%', transform: 'translateY(-50%)', fontSize:18, color:'#666', zIndex: 1}}>@</span>
-                        <input 
-                            className="input" 
-                            style={{
-                                paddingLeft: 35, 
-                                width: '100%', 
-                                boxSizing: 'border-box',
-                                border: '1px solid #00ff88',
-                                boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)',
-                                borderRadius: '12px',
-                                outline: 'none',
-                                backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                                color: '#fff'
-                            }}
-                            placeholder="seu_usuario_insta"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                          {isSearching && (
-                            <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
-                        )}
+                        <input className="input" style={{paddingLeft: 35, width: '100%', boxSizing: 'border-box', border: '1px solid #00ff88', boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)', borderRadius: '12px', outline: 'none', backgroundColor: 'rgba(0, 0, 0, 0.2)', color: '#fff'}} placeholder="seu_usuario_insta" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        {isSearching && <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>}
                     </div>
                     {searchResults.length > 0 && (
-                        <div className="search-results-dropdown" style={{ 
-                            position: 'absolute', 
-                            top: '100%', 
-                            left: 0, 
-                            right: 0, 
-                            background: '#111', 
-                            border: '1px solid #333', 
-                            borderRadius: 8,
-                            zIndex: 10,
-                            marginTop: 5,
-                            maxHeight: '300px',
-                            overflowY: 'auto'
-                        }}>
-                            {searchResults.map(p => {
-                                const safeProfilePic = processInstagramImageUrl(p.profilePic, p.username)
-                                
-                                return (
-                                <div 
-                                    key={p.username} 
-                                    className="search-result-item"
-                                    style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
-                                    onClick={() => handleLoginAndJoin(p)}
-                                >
-                                    <img src={safeProfilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
+                        <div className="search-results-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#111', border: '1px solid #333', borderRadius: 8, zIndex: 10, marginTop: 5, maxHeight: '300px', overflowY: 'auto' }}>
+                            {searchResults.map(p => (
+                                <div key={p.username} className="search-result-item" style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }} onClick={() => handleLoginAndJoin(p)}>
+                                    <img src={processInstagramImageUrl(p.profilePic, p.username)} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
                                     <div style={{flex:1, minWidth: 0}}>
                                         <div style={{fontWeight:'bold', fontSize:14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>@{p.username}</div>
                                         <div style={{fontSize:12, color:'#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.fullName}</div>
                                     </div>
                                     <div style={{fontSize:12, color:'#4CAF50', flexShrink: 0}}>Entrar →</div>
                                 </div>
-                                )
-                            })}
+                            ))}
                         </div>
                     )}
                 </div>
@@ -553,75 +368,144 @@ export default function GrupoPage() {
         {/* BOTÃO PARTICIPAR */}
         {userProfile && !isUserMember && (
           <div className="join-section" style={{padding: '0 10px'}}>
-             <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>
-                Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong>
-             </div>
-             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining} style={{width: '100%', maxWidth: '100%'}}>
-               {isJoining ? '⏳ Entrando...' : '✨ Entrar no Grupo'}
-             </button>
-             <button 
-                className="btn-link" 
-                style={{display:'block', margin:'10px auto', background:'none', border:'none', color:'#666', cursor:'pointer', fontSize:12}}
-                onClick={() => {
-                    localStorage.removeItem('userProfile')
-                    setUserProfile(null)
-                }}
-             >
-                Trocar de conta
-             </button>
+             <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong></div>
+             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining} style={{width: '100%', maxWidth: '100%'}}>{isJoining ? '⏳ Entrando...' : '✨ Entrar no Grupo'}</button>
+             <button className="btn-link" style={{display:'block', margin:'10px auto', background:'none', border:'none', color:'#666', cursor:'pointer', fontSize:12}} onClick={() => { localStorage.removeItem('userProfile'); setUserProfile(null) }}>Trocar de conta</button>
           </div>
         )}
 
         {/* ARENA E STATS */}
         {isUserMember && profiles.length > 0 && (
           <div className="profiles-container">
-            <div className="total-stats-mobile" style={{
-              marginBottom: '16px',
-              padding: '16px 20px', 
-              display: 'flex',
-              justifyContent: 'space-around',
-              alignItems: 'center',
-              height: 'auto',
-              gap: '15px'
-            }}>
+            <div className="total-stats-mobile" style={{ marginBottom: '16px', padding: '16px 20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center', height: 'auto', gap: '15px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
                 <div className="total-label-mobile" style={{ marginBottom: '6px', fontSize: '13px', textTransform: 'lowercase' }}>membros</div>
                 <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{profiles.length}</div>
               </div>
               <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }}></div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px'}}>
-                  <div className="total-label-mobile" style={{ fontSize: '13px', textTransform: 'lowercase' }}>seguidores total</div>
-                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px'}}><div className="total-label-mobile" style={{ fontSize: '13px', textTransform: 'lowercase' }}>seguidores total</div></div>
                 <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{formatNumber(getTotalFollowers())}</div>
               </div>
             </div>
             
-            {/* 🔥 ARENA COM TOP 15 */}
-            <ProfilesArena 
-              profiles={topProfiles}
-              onProfileClick={setSelectedProfile}
-              creatorUsername={groupData?.creator || ''}
-              currentUsername={userProfile?.username || ''}
-              isUserMember={isUserMember}
-            />
-            
-            {/* 🔥 LISTA COMPLETA ABAIXO */}
-            <MembersList 
-              profiles={profiles}
-              topProfiles={topProfiles}
-              onProfileClick={setSelectedProfile}
-            />
+            <ProfilesArena profiles={topProfiles} onProfileClick={setSelectedProfile} creatorUsername={groupData?.creator || ''} currentUsername={userProfile?.username || ''} isUserMember={isUserMember} />
+            <MembersList profiles={profiles} topProfiles={topProfiles} onProfileClick={setSelectedProfile} />
           </div>
         )}
 
         {/* MODAL DE PERFIL */}
-        {selectedProfile && (
-          <ProfileModal 
-            profile={selectedProfile}
-            onClose={() => setSelectedProfile(null)}
-          />
-        )}
+        {selectedProfile && <ProfileModal profile={selectedProfile} onClose={() => setSelectedProfile(null)} />}
+      </div>
+    </div>
+  )
+}
+
+// ==========================================
+// SUB-COMPONENTES
+// ==========================================
+
+interface MembersListProps { profiles: Profile[]; topProfiles: Profile[]; onProfileClick: (profile: Profile) => void }
+function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps) {
+  const formatNumber = (num: number) => num >= 1000000 ? (num / 1000000).toFixed(1) + 'M' : num >= 1000 ? (num / 1000).toFixed(1) + 'K' : num.toString()
+  const outsideArena = profiles.filter(p => !topProfiles.some(top => top.username.toLowerCase() === p.username.toLowerCase()))
+  if (outsideArena.length === 0) return null
+  return (
+    <div style={{ marginTop: '24px', padding: '20px', background: 'rgba(0, 191, 255, 0.03)', border: '1px solid rgba(0, 191, 255, 0.15)', borderRadius: '16px' }}>
+      <h3 style={{ color: '#00bfff', fontSize: '16px', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><span>📋</span> Fora da Arena ({outsideArena.length})</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {outsideArena.map((profile) => (
+          <div key={profile.username} onClick={() => onProfileClick(profile)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(0, 191, 255, 0.05)', border: '1px solid rgba(0, 191, 255, 0.1)', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease' }}>
+            <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 191, 255, 0.3)' }} onError={(e) => handleImageError(e, profile.username)} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{profile.username}</div>
+              <div style={{ color: 'rgba(0, 191, 255, 0.8)', fontSize: '13px', fontWeight: '600' }}>{formatNumber(profile.followers)} seguidores</div>
+            </div>
+            <div style={{ color: 'rgba(0, 191, 255, 0.5)', fontSize: '20px', fontWeight: 'bold' }}>→</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface ProfilesArenaProps { profiles: Profile[]; onProfileClick: (profile: Profile) => void; creatorUsername: string; currentUsername: string; isUserMember: boolean }
+function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
+  const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
+    queueMicrotask(() => {
+      setPositions(prev => {
+        const current = prev[username]
+        if (current && Math.abs(current.x - position.x) < 1 && Math.abs(current.y - position.y) < 1) return prev
+        return { ...prev, [username]: { ...position, size: size || current?.size } }
+      })
+    })
+  }, [])
+  return (
+    <div className="profiles-arena" style={{ position: 'relative', width: '100%', minHeight: '400px', height: 'calc(100vh - 450px)', maxHeight: '600px', overflow: 'hidden', touchAction: 'pan-y pinch-zoom' }}>
+      {profiles.map((profile) => <MovingProfile key={profile.username} profile={profile} onProfileClick={onProfileClick} allPositions={positions} updatePosition={updatePosition} isAdmin={profile.isCreator || false} />)}
+    </div>
+  )
+}
+
+interface MovingProfileProps { profile: Profile; onProfileClick: (profile: Profile) => void; allPositions: Record<string, { x: number; y: number; size?: number }>; updatePosition: (username: string, position: { x: number; y: number }, size?: number) => void; isAdmin: boolean }
+function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isHovered, setIsHovered] = useState(false)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const velocityRef = useRef({ x: 0, y: 0 })
+  const isInitializedRef = useRef(false)
+  const imageSize = Math.max(45, Math.min(100, 45 + (Math.log10(profile.followers) - 3) / 3 * 55))
+
+  useEffect(() => {
+    if (!containerRef.current || !containerRef.current.parentElement) return
+    const arena = containerRef.current.parentElement
+    if (!isInitializedRef.current) {
+      setPosition({ x: Math.random() * (arena.offsetWidth - imageSize), y: Math.random() * (arena.offsetHeight - imageSize) })
+      velocityRef.current = { x: (Math.random() - 0.5), y: (Math.random() - 0.5) }
+      isInitializedRef.current = true
+    }
+    const animate = () => {
+      if (isHovered) { requestAnimationFrame(animate); return }
+      setPosition(prev => {
+        let nextX = prev.x + velocityRef.current.x
+        let nextY = prev.y + velocityRef.current.y
+        if (nextX <= 0 || nextX >= arena.offsetWidth - imageSize) velocityRef.current.x *= -1
+        if (nextY <= 0 || nextY >= arena.offsetHeight - imageSize) velocityRef.current.y *= -1
+        updatePosition(profile.username, { x: nextX, y: nextY }, imageSize)
+        return { x: Math.max(0, Math.min(nextX, arena.offsetWidth - imageSize)), y: Math.max(0, Math.min(nextY, arena.offsetHeight - imageSize)) }
+      })
+      requestAnimationFrame(animate)
+    }
+    const id = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(id)
+  }, [isHovered])
+
+  return (
+    <div ref={containerRef} className="profile-pic-container" style={{ left: position.x, top: position.y, width: imageSize, height: imageSize, position: 'absolute' }} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+      {isAdmin && <div style={{position: 'absolute', top: -5, right: -5, fontSize: imageSize * 0.25}}>👑</div>}
+      <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} onClick={() => onProfileClick(profile)} onError={(e) => handleImageError(e, profile.username)} />
+    </div>
+  )
+}
+
+function ProfileModal({ profile, onClose }: { profile: Profile; onClose: () => void }) {
+  const formatNumber = (n: number) => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : n
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()} style={{display:'flex', alignItems:'center', justifyContent:'center'}}>
+      <div className="modal-content" style={{width:'90%', maxWidth:450, padding:0}}>
+        <button onClick={onClose} className="modal-close" style={{position:'absolute', right:10, top:10, fontSize:24, background:'none', border:'none', color:'#fff'}}>×</button>
+        <div style={{padding:20, display:'flex', alignItems:'center', gap:15}}>
+            <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{width:70, height:70, borderRadius:'50%'}} onError={(e) => handleImageError(e, profile.username)} />
+            <div><div style={{fontSize:18, fontWeight:'bold'}}>@{profile.username}</div><div>{profile.fullName}</div></div>
+        </div>
+        <div style={{display:'flex', justifyContent:'space-around', padding:'10px 0', borderTop:'1px solid #333', borderBottom:'1px solid #333'}}>
+            <div style={{textAlign:'center'}}><b>{formatNumber(profile.posts)}</b><br/><small>Posts</small></div>
+            <div style={{textAlign:'center'}}><b>{formatNumber(profile.followers)}</b><br/><small>Seguidores</small></div>
+            <div style={{textAlign:'center'}}><b>{formatNumber(profile.following)}</b><br/><small>Seguindo</small></div>
+        </div>
+        <div style={{padding:20, maxHeight:200, overflowY:'auto'}}>{profile.biography}</div>
+        <a href={`https://instagram.com/${profile.username}`} target="_blank" className="modal-link-btn" style={{display:'block', textAlign:'center', padding:15, margin:20, background:'#0095f6', borderRadius:8, color:'#fff', textDecoration:'none'}}>Ver no Instagram</a>
       </div>
     </div>
   )
