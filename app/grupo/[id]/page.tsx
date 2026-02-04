@@ -405,111 +405,26 @@ export default function GrupoPage() {
 // SUB-COMPONENTES
 // ==========================================
 
-interface MembersListProps { profiles: Profile[]; topProfiles: Profile[]; onProfileClick: (profile: Profile) => void }
-function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps) {
-  const formatNumber = (num: number) => num >= 1000000 ? (num / 1000000).toFixed(1) + 'M' : num >= 1000 ? (num / 1000).toFixed(1) + 'K' : num.toString()
-  const outsideArena = profiles.filter(p => !topProfiles.some(top => top.username.toLowerCase() === p.username.toLowerCase()))
-  if (outsideArena.length === 0) return null
-  return (
-    <div style={{ marginTop: '24px', padding: '20px', background: 'rgba(0, 191, 255, 0.03)', border: '1px solid rgba(0, 191, 255, 0.15)', borderRadius: '16px' }}>
-      <h3 style={{ color: '#00bfff', fontSize: '16px', fontWeight: '700', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><span>📋</span> Fora da Arena ({outsideArena.length})</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {outsideArena.map((profile) => (
-          <div key={profile.username} onClick={() => onProfileClick(profile)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(0, 191, 255, 0.05)', border: '1px solid rgba(0, 191, 255, 0.1)', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.3s ease' }}>
-            <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(0, 191, 255, 0.3)' }} onError={(e) => handleImageError(e, profile.username)} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: '#fff', fontSize: '15px', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{profile.username}</div>
-              <div style={{ color: 'rgba(0, 191, 255, 0.8)', fontSize: '13px', fontWeight: '600' }}>{formatNumber(profile.followers)} seguidores</div>
-            </div>
-            <div style={{ color: 'rgba(0, 191, 255, 0.5)', fontSize: '20px', fontWeight: 'bold' }}>→</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
-interface ProfilesArenaProps { profiles: Profile[]; onProfileClick: (profile: Profile) => void; creatorUsername: string; currentUsername: string; isUserMember: boolean }
-function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
-  const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
-    queueMicrotask(() => {
-      setPositions(prev => {
-        const current = prev[username]
-        if (current && Math.abs(current.x - position.x) < 1 && Math.abs(current.y - position.y) < 1) return prev
-        return { ...prev, [username]: { ...position, size: size || current?.size } }
-      })
-    })
-  }, [])
-  return (
-    <div className="profiles-arena" style={{ position: 'relative', width: '100%', minHeight: '400px', height: 'calc(100vh - 450px)', maxHeight: '600px', overflow: 'hidden', touchAction: 'pan-y pinch-zoom' }}>
-      {profiles.map((profile) => <MovingProfile key={profile.username} profile={profile} onProfileClick={onProfileClick} allPositions={positions} updatePosition={updatePosition} isAdmin={profile.isCreator || false} />)}
-    </div>
-  )
-}
 
-interface MovingProfileProps { profile: Profile; onProfileClick: (profile: Profile) => void; allPositions: Record<string, { x: number; y: number; size?: number }>; updatePosition: (username: string, position: { x: number; y: number }, size?: number) => void; isAdmin: boolean }
-function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [isHovered, setIsHovered] = useState(false)
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const velocityRef = useRef({ x: 0, y: 0 })
-  const isInitializedRef = useRef(false)
-  const imageSize = Math.max(45, Math.min(100, 45 + (Math.log10(profile.followers) - 3) / 3 * 55))
 
-  useEffect(() => {
-    if (!containerRef.current || !containerRef.current.parentElement) return
-    const arena = containerRef.current.parentElement
-    if (!isInitializedRef.current) {
-      setPosition({ x: Math.random() * (arena.offsetWidth - imageSize), y: Math.random() * (arena.offsetHeight - imageSize) })
-      velocityRef.current = { x: (Math.random() - 0.5), y: (Math.random() - 0.5) }
-      isInitializedRef.current = true
-    }
-    const animate = () => {
-      if (isHovered) { requestAnimationFrame(animate); return }
-      setPosition(prev => {
-        let nextX = prev.x + velocityRef.current.x
-        let nextY = prev.y + velocityRef.current.y
-        if (nextX <= 0 || nextX >= arena.offsetWidth - imageSize) velocityRef.current.x *= -1
-        if (nextY <= 0 || nextY >= arena.offsetHeight - imageSize) velocityRef.current.y *= -1
-        updatePosition(profile.username, { x: nextX, y: nextY }, imageSize)
-        return { x: Math.max(0, Math.min(nextX, arena.offsetWidth - imageSize)), y: Math.max(0, Math.min(nextY, arena.offsetHeight - imageSize)) }
-      })
-      requestAnimationFrame(animate)
-    }
-    const id = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(id)
-  }, [isHovered])
 
-  return (
-    <div ref={containerRef} className="profile-pic-container" style={{ left: position.x, top: position.y, width: imageSize, height: imageSize, position: 'absolute' }} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-      {isAdmin && <div style={{position: 'absolute', top: -5, right: -5, fontSize: imageSize * 0.25}}>👑</div>}
-      <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} onClick={() => onProfileClick(profile)} onError={(e) => handleImageError(e, profile.username)} />
-    </div>
-  )
-}
 
-function ProfileModal({ profile, onClose }: { profile: Profile; onClose: () => void }) {
-  const formatNumber = (n: number) => n >= 1000000 ? (n/1000000).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : n
-  return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()} style={{display:'flex', alignItems:'center', justifyContent:'center'}}>
-      <div className="modal-content" style={{width:'90%', maxWidth:450, padding:0}}>
-        <button onClick={onClose} className="modal-close" style={{position:'absolute', right:10, top:10, fontSize:24, background:'none', border:'none', color:'#fff'}}>×</button>
-        <div style={{padding:20, display:'flex', alignItems:'center', gap:15}}>
-            <img src={processInstagramImageUrl(profile.profilePic, profile.username)} style={{width:70, height:70, borderRadius:'50%'}} onError={(e) => handleImageError(e, profile.username)} />
-            <div><div style={{fontSize:18, fontWeight:'bold'}}>@{profile.username}</div><div>{profile.fullName}</div></div>
-        </div>
-        <div style={{display:'flex', justifyContent:'space-around', padding:'10px 0', borderTop:'1px solid #333', borderBottom:'1px solid #333'}}>
-            <div style={{textAlign:'center'}}><b>{formatNumber(profile.posts)}</b><br/><small>Posts</small></div>
-            <div style={{textAlign:'center'}}><b>{formatNumber(profile.followers)}</b><br/><small>Seguidores</small></div>
-            <div style={{textAlign:'center'}}><b>{formatNumber(profile.following)}</b><br/><small>Seguindo</small></div>
-        </div>
-        <div style={{padding:20, maxHeight:200, overflowY:'auto'}}>{profile.biography}</div>
-        <a href={`https://instagram.com/${profile.username}`} target="_blank" className="modal-link-btn" style={{display:'block', textAlign:'center', padding:15, margin:20, background:'#0095f6', borderRadius:8, color:'#fff', textDecoration:'none'}}>Ver no Instagram</a>
-      </div>
-    </div>
-  )
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -546,6 +461,7 @@ function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps
       border: '1px solid rgba(0, 191, 255, 0.15)',
       borderRadius: '16px'
     }}>
+
       <h3 style={{
         color: '#00bfff',
         fontSize: '16px',
@@ -592,6 +508,21 @@ function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps
               e.currentTarget.style.transform = 'translateX(0)'
             }}
           >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             <div style={{ position: 'relative' }}>
               <img 
                 src={safeProfilePic}
