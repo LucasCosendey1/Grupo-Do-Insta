@@ -19,7 +19,6 @@ IMPORTANTE: Você disse que os dados ESTÃO NO BANCO!
 // VERIFICAR: app/api/grupos/criar/route.ts (Documento 37)
 
 // Linha ~61-73: INSERT do criador como membro
-import { sql } from '@vercel/postgres'
 await sql`
   INSERT INTO grupo_membros (
     grupo_id, username, full_name, profile_pic, followers, 
