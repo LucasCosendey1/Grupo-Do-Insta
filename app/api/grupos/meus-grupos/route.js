@@ -36,7 +36,6 @@ export async function GET(request) {
 
     const groups = result.rows.map(row => ({
       id: row.id,
-      slug: row.slug || row.id,
       name: row.name,
       icon: {
         emoji: row.icon_emoji,

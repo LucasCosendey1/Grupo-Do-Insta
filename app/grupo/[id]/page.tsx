@@ -1,16 +1,9 @@
-// app/grupo/[id]/page.tsx
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { processInstagramImageUrl, handleImageError } from '@/lib/image-utils'
 import '../../globals.css'
-
-// ==========================================
-// CONSTANTES
-// ==========================================
-const MAX_ARENA_MEMBERS = 15 
 
 // ==========================================
 // INTERFACES
@@ -49,11 +42,19 @@ interface UserProfile {
   fullName: string
   profilePic: string
   followers: number
-  following?: number
-  posts?: number
-  biography?: string
+  following: number
+  posts: number
+  biography: string
   isVerified: boolean
+  isPrivate?: boolean
 }
+
+// 👑 CONSTANTE DO ADMIN GERAL
+const ADMIN_USERNAME = 'instadogrupo.oficial'
+
+// ==========================================
+// PÁGINA PRINCIPAL
+// ==========================================
 
 export default function GrupoPage() {
   const router = useRouter()
@@ -61,9 +62,8 @@ export default function GrupoPage() {
   
   const groupId = (params?.id as string) || ''
   
-  // Estados de Dados
+  // Estados de Dados do Grupo
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [topProfiles, setTopProfiles] = useState<Profile[]>([]) 
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
   const [groupData, setGroupData] = useState<GroupData | null>(null)
   const [isLoadingGroup, setIsLoadingGroup] = useState(true)
@@ -72,68 +72,71 @@ export default function GrupoPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [isUserMember, setIsUserMember] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
   
-  // Estados de Busca e UI
+  // Estados de Busca (Login Embutido)
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<Profile[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Estados de UI (Menu)
   const [showMenu, setShowMenu] = useState(false)
   const [showShareOptions, setShowShareOptions] = useState(false)
   const [copiedType, setCopiedType] = useState<'link' | 'message' | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [isMounted, setIsMounted] = useState(false)
 
-  // 1. Inicialização
+  // 👑 VERIFICAÇÃO DE SUPER ADMIN
+  const isAdmin = userProfile?.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
+
+  // 1. Validação de Rota
+  useEffect(() => {
+    if (!groupId) {
+      console.error('❌ groupId está undefined!')
+      router.push('/')
+      return
+    }
+  }, [groupId, router])
+
+  // 2. Inicialização
   useEffect(() => {
     setIsMounted(true)
     if (typeof window !== 'undefined') {
       const savedProfile = localStorage.getItem('userProfile')
       if (savedProfile) {
-        try { setUserProfile(JSON.parse(savedProfile)) } catch (e) { console.error(e) }
+        try {
+          setUserProfile(JSON.parse(savedProfile))
+        } catch (error) {
+          console.error(error)
+        }
       }
     }
   }, [])
 
-  // 2. Carregar Grupo (COM ANTI-CACHE)
+  // 3. Carregar Grupo
   useEffect(() => {
     if (!groupId) return
     
     async function loadGroup() {
       try {
         setIsLoadingGroup(true)
-        // 🔥 Timestamp para quebrar cache do fetch
-        const response = await fetch(`/api/grupos/${groupId}?t=${new Date().getTime()}`, { 
-          cache: 'no-store',
-          headers: { 'Pragma': 'no-cache' }
+        
+        const response = await fetch(`/api/grupos/${groupId}`, { 
+          cache: 'no-store' 
         })
         
-        if (!response.ok) throw new Error('Grupo não encontrado')
+        if (!response.ok) {
+          throw new Error('Grupo não encontrado')
+        }
         
         const data = await response.json()
         
         if (data.success && data.group) {
           setGroupData(data.group)
-          const allProfiles = data.group.profiles || []
-          setProfiles(allProfiles)
-          
-          // Lógica da Arena
-          const creatorProfile = allProfiles.find((p: Profile) => p.isCreator === true)
-          const nonCreators = allProfiles.filter((p: Profile) => p.isCreator !== true)
-          const sortedNonCreators = [...nonCreators].sort((a, b) => b.followers - a.followers)
-          
-          const arenaMembers: Profile[] = []
-          if (creatorProfile) arenaMembers.push(creatorProfile)
-          
-          const remainingSlots = MAX_ARENA_MEMBERS - (creatorProfile ? 1 : 0)
-          arenaMembers.push(...sortedNonCreators.slice(0, remainingSlots))
-          
-          setTopProfiles(arenaMembers)
+          setProfiles(data.group.profiles || [])
         }
       } catch (error) {
-        console.error('❌ Erro ao carregar:', error)
-        setErrorMsg('Grupo não encontrado')
+        console.error('❌ Erro ao carregar grupo:', error)
       } finally {
         setIsLoadingGroup(false)
       }
@@ -142,20 +145,24 @@ export default function GrupoPage() {
     loadGroup()
   }, [groupId])
 
-  // 3. Verificar Membro (Confiança na Lista)
+  // 4. Verificar Membro (MODIFICADO PARA ADMIN)
   useEffect(() => {
     if (userProfile && profiles.length > 0) {
-      // Verifica se o username está na lista vinda do banco
-      const isMember = profiles.some(p => p.username && p.username.toLowerCase() === userProfile.username.toLowerCase())
-      setIsUserMember(isMember)
-    } else {
-      setIsUserMember(false)
+      const isMember = profiles.some(p => p.username.toLowerCase() === userProfile.username.toLowerCase())
+      const adminViewing = userProfile.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
+      
+      // Admin sempre pode visualizar, mesmo não sendo membro
+      setIsUserMember(isMember || adminViewing)
     }
   }, [userProfile, profiles])
 
-  // 4. Busca de Usuário
+  // 5. Lógica de Busca
   useEffect(() => {
-    if (searchTerm.length < 2) { setSearchResults([]); return }
+    if (searchTerm.length < 2) {
+      setSearchResults([])
+      return
+    }
+
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
 
     setIsSearching(true)
@@ -163,13 +170,23 @@ export default function GrupoPage() {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
         const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
-        if (response.ok) setSearchResults([await response.json()]) 
-        else setSearchResults([])
-      } catch (error) { setSearchResults([]) } 
-      finally { setIsSearching(false) }
+        
+        if (response.ok) {
+          const data = await response.json()
+          setSearchResults([data]) 
+        } else {
+          setSearchResults([])
+        }
+      } catch (error) {
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
     }, 600)
 
-    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current) }
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
+    }
   }, [searchTerm])
 
   // ==========================================
@@ -177,91 +194,98 @@ export default function GrupoPage() {
   // ==========================================
 
   const handleLoginAndJoin = async (profileData: any) => {
-    // 1. Preparar Dados
-    let finalData = profileData
-    
-    // Se vier pobre, tenta usar o que está no cache local
-    if ((!profileData.followers || profileData.followers === 0) && userProfile?.username === profileData.username) {
-        finalData = { ...userProfile, ...profileData }
+    const userToSave: UserProfile = {
+        username: profileData.username,
+        fullName: profileData.fullName,
+        profilePic: profileData.profilePic,
+        followers: profileData.followers,
+        following: profileData.following,
+        posts: profileData.posts,
+        biography: profileData.biography,
+        isVerified: profileData.isVerified,
+        isPrivate: profileData.isPrivate
     }
-
-    const userToSave = {
-        username: finalData.username,
-        fullName: finalData.fullName || finalData.username,
-        profilePic: finalData.profilePic || '',
-        followers: Number(finalData.followers) || 0,
-        isVerified: finalData.isVerified || false,
-        following: Number(finalData.following) || 0,
-        posts: Number(finalData.posts) || 0,
-        biography: finalData.biography || ''
-    }
-
-    // 2. Salva no Cache Local
     localStorage.setItem('userProfile', JSON.stringify(userToSave))
     setUserProfile(userToSave)
     setSearchTerm('')
     setSearchResults([])
 
     setIsJoining(true)
-
-
-
-
     try {
-        // 3. Chama a API
+        fetch('/api/usuarios/sincronizar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(profileData)
+        })
+
         const res = await fetch('/api/grupos/adicionar-membro', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 groupId: groupId,
-                username: userToSave.username,
-                profileData: userToSave
+                username: profileData.username,
+                profileData: profileData
             })
         })
 
-        if (!res.ok) {
-            const errorData = await res.json()
-            throw new Error(errorData.error || 'Erro ao entrar')
+        const result = await res.json()
+        
+        if (!res.ok && !result.error?.includes('já está no grupo')) {
+            throw new Error(result.error)
         }
 
-        // 🔥 A MUDANÇA É AQUI:
-        // Em vez de window.location.reload(), use isso:
-        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
+        setProfiles(prev => {
+            const exists = prev.some(p => p.username.toLowerCase() === profileData.username.toLowerCase())
+            if (exists) return prev
+            return [...prev, { ...profileData, isCreator: false }]
+        })
+        setIsUserMember(true)
 
     } catch (err) {
-        console.error(err)
-        alert('Erro ao entrar no grupo. Tente novamente.')
+        alert('Erro ao entrar no grupo.')
+    } finally {
         setIsJoining(false)
     }
-  } // <--- ADICIONE ESTA CHAVE AQUI!
+  }
 
   const handleJoinOnly = async () => {
     if (!userProfile) return
-    await handleLoginAndJoin(userProfile)
+    setIsJoining(true)
+    
+    try {
+      const profileDataCompleto = {
+        username: userProfile.username,
+        fullName: userProfile.fullName,
+        profilePic: userProfile.profilePic,
+        followers: userProfile.followers,
+        following: userProfile.following || 0,
+        posts: userProfile.posts || 0,
+        biography: userProfile.biography || '',
+        isPrivate: userProfile.isPrivate || false,
+        isVerified: userProfile.isVerified
+      }
+      
+      await handleLoginAndJoin(profileDataCompleto)
+    } catch (e) {
+      console.error('❌ Erro ao entrar no grupo:', e)
+      alert('Erro ao entrar no grupo.')
+    } finally {
+      setIsJoining(false)
+    }
   }
 
   const handleLeaveGroup = async () => {
     if (!userProfile || !window.confirm('Sair do grupo?')) return
     setShowMenu(false)
-    
-    try {
-        await fetch('/api/grupos/sair', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ groupId, username: userProfile.username })
-        })
-        
-        // 🔥 A MUDANÇA É AQUI:
-        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
-        
-    } catch (error) {
-        console.error('Erro ao sair', error)
-        // Fallback
-        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime()
-    }
+    await fetch('/api/grupos/sair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId, username: userProfile.username })
+    })
+    setIsUserMember(false)
+    setProfiles(prev => prev.filter(p => p.username.toLowerCase() !== userProfile.username.toLowerCase()))
   }
 
-  // Helpers UI
   const formatNumber = (num: number) => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -282,35 +306,71 @@ export default function GrupoPage() {
     if (typeof navigator.share === 'function' && groupData) {
         const link = `${window.location.origin}/grupo/${groupId}`
         const msg = `✨ Convite Especial!\nVenha fazer parte do "${groupData.name}" 🚀\n\n👥 ${profiles.length} Membros\n📊 ${formatNumber(getTotalFollowers())} de Audiência Combinada\n\nJunte-se a nós aqui: 👇\n${link}`
-        navigator.share({ title: `Convite: ${groupData.name}`, text: msg })
+        navigator.share({ 
+            title: `Convite: ${groupData.name}`, 
+            text: msg
+          })
     } else {
         handleCopyMessage()
     }
   }
 
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>, username: string) => {
+    if (!e.currentTarget.src.includes('ui-avatars.com')) {
+      e.currentTarget.src = `https://ui-avatars.com/api/?name=${username}&size=200&background=00bfff&color=fff&bold=true`
+    }
+  }
+
+  // --- RENDERS ---
   if (!isMounted) return null
-  if (errorMsg) return <div className="container"><div className="card" style={{padding:40, textAlign:'center'}}><h3>{errorMsg}</h3><Link href="/" className="btn">Voltar</Link></div></div>
-  if (isLoadingGroup) return <div className="container"><div className="card"><div className="loading-state"><div className="spinner"></div><p>Carregando...</p></div></div></div>
+
+  if (isLoadingGroup) {
+    return (
+      <div className="container">
+        <div className="card grupo-card">
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Carregando...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="container">
       <div className="card grupo-card">
         
       {/* HEADER TOP */}
-      <div className="grupo-header" style={{ display: 'flex', justifyContent: isUserMember ? 'space-between' : 'center', alignItems: 'center', width: '100%', padding: '0 10px' }}>
+      <div className="grupo-header" style={{ 
+        display: 'flex', 
+        justifyContent: isUserMember ? 'space-between' : 'center',
+        alignItems: 'center', 
+        width: '100%',
+        padding: '0 10px'
+      }}>
+        {/* BOTÃO VOLTAR */}
         {isUserMember && (
-          <Link href="/" className="btn-back-large"><span className="back-arrow-large">←</span><span>Voltar</span></Link>
+          <Link href="/" className="btn-back-large">
+            <span className="back-arrow-large">←</span><span>Voltar</span>
+          </Link>
         )}
-        {isUserMember && (
+
+        {/* MENU (Apenas para membros reais, não admin em modo viewer) */}
+        {isUserMember && !isAdmin && (
           <div className="group-menu-top" ref={menuRef} style={{ position: 'relative' }}>
             <button className="btn-menu-top" onClick={() => setShowMenu(!showMenu)}>⋮</button>
             {showMenu && (
               <div className="dropdown-menu-top" style={{ top: '100%', right: 0, marginTop: '8px', zIndex: 50 }}>
-                <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>Compartilhar</button>
+                <button className="menu-item-top" onClick={() => setShowShareOptions(!showShareOptions)}>
+                  Compartilhar {showShareOptions ? '▼' : '▶'}
+                </button>
                 {showShareOptions && (
                   <div className="share-submenu">
                     <button className="submenu-item" onClick={handleNativeShare}>Nativo</button>
-                    <button className="submenu-item" onClick={handleCopyMessage}>{copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}</button>
+                    <button className="submenu-item" onClick={handleCopyMessage}>
+                      {copiedType === 'message' ? 'Copiado!' : 'Copiar Link'}
+                    </button>
                   </div>
                 )}
                 <button className="menu-item-top menu-item-leave" onClick={handleLeaveGroup}>🚪 Sair</button>
@@ -324,13 +384,76 @@ export default function GrupoPage() {
         <div className="header">
           <div className="logo">{groupData?.icon?.emoji || '⚡'}</div>
           <h1>{groupData?.name}</h1>
+          
           <div className="subtitle" style={{marginTop: 5}}>
-              {!isUserMember ? ( 'Para entrar no grupo, informe seu Instagram:' ) : (
+              {!isUserMember ? (
+                'Para entrar no grupo, informe seu Instagram:'
+              ) : (
                 <div style={{display:'flex', flexDirection: 'column', alignItems: 'center', marginTop: 20, width: '100%', padding: '0 10px', boxSizing: 'border-box'}}>
-                    <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>Convide seus amigos e ajude o grupo a decolar! 🚀</p>
+                    <p style={{marginBottom: 14, color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: '500', textAlign: 'center', lineHeight: '1.4'}}>
+                       Convide seus amigos e ajude o grupo a decolar! 🚀
+                    </p>
+                    
                     <div style={{display: 'flex', gap: '10px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', width: '100%', maxWidth: '400px'}}>
-                        <button onClick={handleCopyMessage} style={{background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.08)', color: 'rgba(255, 255, 255, 0.4)', padding: '10px 16px', borderRadius: '50px', fontSize: '13px', cursor: 'pointer', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '5px'}}><span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}</button>
-                        <button onClick={handleNativeShare} style={{background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)', border: 'none', color: '#000', padding: '12px 28px', borderRadius: '50px', fontSize: '15px', cursor: 'pointer', fontWeight: '800', boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', display: 'flex', alignItems: 'center', gap: '7px', flex: 1, minWidth: '160px', maxWidth: '240px', justifyContent: 'center'}}>Compartilhar Grupo</button>
+                        
+                        <button 
+                          onClick={handleCopyMessage} 
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.06)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)', 
+                            color: 'rgba(255, 255, 255, 0.4)',
+                            padding: '10px 16px',
+                            borderRadius: '50px', 
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            fontWeight: '500',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
+                          }}
+                          onMouseOver={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'
+                          }}
+                          onMouseOut={(e) => {
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)'
+                              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.4)'
+                          }}
+                        >
+                            <span>🔗</span> {copiedType === 'message' ? 'Copiado!' : 'Copiar'}
+                        </button>
+
+                        <button 
+                          onClick={handleNativeShare} 
+                          style={{
+                            background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)', 
+                            border: 'none',
+                            color: '#000', 
+                            padding: '12px 28px', 
+                            borderRadius: '50px', 
+                            fontSize: '15px', 
+                            cursor: 'pointer',
+                            fontWeight: '800', 
+                            boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', 
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            transition: 'all 0.2s ease',
+                            flex: 1,
+                            minWidth: '160px',
+                            maxWidth: '240px',
+                            justifyContent: 'center',
+                            whiteSpace: 'nowrap'
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.03)'}
+                          onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                              Compartilhar Grupo
+                        </button>
+
                     </div>
                 </div>
               )}
@@ -343,14 +466,49 @@ export default function GrupoPage() {
                 <div className="input-group" style={{ position: 'relative' }}>
                     <div className="input-wrapper">
                         <span className="input-prefix" style={{position:'absolute', left:15, top:'50%', transform: 'translateY(-50%)', fontSize:18, color:'#666', zIndex: 1}}>@</span>
-                        <input className="input" style={{paddingLeft: 35, width: '100%', boxSizing: 'border-box', border: '1px solid #00ff88', boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)', borderRadius: '12px', outline: 'none', backgroundColor: 'rgba(0, 0, 0, 0.2)', color: '#fff'}} placeholder="seu_usuario_insta" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                        {isSearching && <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>}
+                        <input 
+                            className="input" 
+                            style={{
+                                paddingLeft: 35, 
+                                width: '100%', 
+                                boxSizing: 'border-box',
+                                border: '1px solid #00ff88',
+                                boxShadow: '0 0 15px rgba(0, 255, 136, 0.3)',
+                                borderRadius: '12px',
+                                outline: 'none',
+                                backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                                color: '#fff'
+                            }}
+                            placeholder="seu_usuario_insta"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                          {isSearching && (
+                            <div className="mini-spinner" style={{position:'absolute', right:15, top:'50%', transform: 'translateY(-50%)', width:20, height:20, borderTopColor: '#00ff88'}}></div>
+                        )}
                     </div>
                     {searchResults.length > 0 && (
-                        <div className="search-results-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#111', border: '1px solid #333', borderRadius: 8, zIndex: 10, marginTop: 5, maxHeight: '300px', overflowY: 'auto' }}>
+                        <div className="search-results-dropdown" style={{ 
+                            position: 'absolute', 
+                            top: '100%', 
+                            left: 0, 
+                            right: 0, 
+                            background: '#111', 
+                            border: '1px solid #333', 
+                            borderRadius: 8,
+                            zIndex: 10,
+                            marginTop: 5,
+                            maxHeight: '300px',
+                            overflowY: 'auto'
+                        }}>
                             {searchResults.map(p => (
-                                <div key={p.username} className="search-result-item" style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }} onClick={() => handleLoginAndJoin(p)}>
-                                    <img src={processInstagramImageUrl(p.profilePic, p.username)} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
+                                <div 
+                                    key={p.username} 
+                                    className="search-result-item"
+                                    style={{ padding: 10, display:'flex', alignItems:'center', gap: 10, cursor:'pointer', borderBottom:'1px solid #222' }}
+                                    onClick={() => handleLoginAndJoin(p)}
+                                >
+                                    <img src={p.profilePic} style={{width:35, height:35, borderRadius:'50%', flexShrink: 0}} onError={(e) => handleImageError(e, p.username)} alt={p.username}/>
                                     <div style={{flex:1, minWidth: 0}}>
                                         <div style={{fontWeight:'bold', fontSize:14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>@{p.username}</div>
                                         <div style={{fontSize:12, color:'#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.fullName}</div>
@@ -365,269 +523,116 @@ export default function GrupoPage() {
             </div>
         )}
 
-        {/* BOTÃO PARTICIPAR */}
-        {userProfile && !isUserMember && (
+        {/* BOTÃO PARTICIPAR - ESCONDER PARA ADMIN */}
+        {userProfile && !isUserMember && !isAdmin && (
           <div className="join-section" style={{padding: '0 10px'}}>
-             <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong></div>
-             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining} style={{width: '100%', maxWidth: '100%'}}>{isJoining ? '⏳ Entrando...' : '✨ Entrar no Grupo'}</button>
-             <button className="btn-link" style={{display:'block', margin:'10px auto', background:'none', border:'none', color:'#666', cursor:'pointer', fontSize:12}} onClick={() => { localStorage.removeItem('userProfile'); setUserProfile(null) }}>Trocar de conta</button>
+             <div style={{textAlign:'center', marginBottom:15, fontSize:13, color:'#aaa'}}>
+                Você está logado como <strong style={{color:'#fff'}}>@{userProfile.username}</strong>
+             </div>
+             <button className="btn btn-join" onClick={handleJoinOnly} disabled={isJoining} style={{width: '100%', maxWidth: '100%'}}>
+               {isJoining ? '⏳ Entrando...' : '✨ Entrar no Grupo'}
+             </button>
+             <button 
+                className="btn-link" 
+                style={{display:'block', margin:'10px auto', background:'none', border:'none', color:'#666', cursor:'pointer', fontSize:12}}
+                onClick={() => {
+                    localStorage.removeItem('userProfile')
+                    setUserProfile(null)
+                }}
+             >
+                Trocar de conta
+             </button>
+          </div>
+        )}
+
+        {/* 👑 AVISO PARA ADMIN */}
+        {userProfile && !isUserMember && isAdmin && (
+          <div style={{
+            padding: '20px',
+            margin: '20px 10px',
+            background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, rgba(255, 165, 0, 0.1) 100%)',
+            border: '2px solid rgba(255, 215, 0, 0.3)',
+            borderRadius: '16px',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: '32px', marginBottom: '12px' }}>👑</div>
+            <h3 style={{ color: '#FFD700', fontSize: '18px', fontWeight: '700', marginBottom: '8px' }}>
+              Modo Administrador
+            </h3>
+            <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '14px', lineHeight: '1.6' }}>
+              Você está visualizando este grupo como admin. Você pode ver todos os membros e estatísticas, mas não pode participar do grupo.
+            </p>
           </div>
         )}
 
         {/* ARENA E STATS */}
         {isUserMember && profiles.length > 0 && (
           <div className="profiles-container">
-            <div className="total-stats-mobile" style={{ marginBottom: '16px', padding: '16px 20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center', height: 'auto', gap: '15px' }}>
+            <div className="total-stats-mobile" style={{
+              marginBottom: '16px',
+              padding: '16px 20px', 
+              display: 'flex',
+              justifyContent: 'space-around',
+              alignItems: 'center',
+              height: 'auto',
+              gap: '15px'
+            }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
                 <div className="total-label-mobile" style={{ marginBottom: '6px', fontSize: '13px', textTransform: 'lowercase' }}>membros</div>
                 <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{profiles.length}</div>
               </div>
               <div style={{ width: '1px', height: '30px', background: 'rgba(255,255,255,0.1)' }}></div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px'}}><div className="total-label-mobile" style={{ fontSize: '13px', textTransform: 'lowercase' }}>seguidores total</div></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px'}}>
+                  <div className="total-label-mobile" style={{ fontSize: '13px', textTransform: 'lowercase' }}>seguidores total</div>
+                </div>
                 <div className="total-number-mobile" style={{ fontSize: '24px', fontWeight: '700' }}>{formatNumber(getTotalFollowers())}</div>
               </div>
             </div>
-            
-            <ProfilesArena profiles={topProfiles} onProfileClick={setSelectedProfile} creatorUsername={groupData?.creator || ''} currentUsername={userProfile?.username || ''} isUserMember={isUserMember} />
-            <MembersList profiles={profiles} topProfiles={topProfiles} onProfileClick={setSelectedProfile} />
+            <ProfilesArena 
+              profiles={profiles}
+              onImageError={handleImageError}
+              onProfileClick={setSelectedProfile}
+              creatorUsername={groupData?.creator || ''}
+              currentUsername={userProfile?.username || ''}
+              isUserMember={isUserMember}
+            />
           </div>
         )}
 
         {/* MODAL DE PERFIL */}
-        {selectedProfile && <ProfileModal profile={selectedProfile} onClose={() => setSelectedProfile(null)} />}
+        {selectedProfile && (
+          <ProfileModal 
+            profile={selectedProfile}
+            onClose={() => setSelectedProfile(null)}
+            onImageError={handleImageError}
+          />
+        )}
       </div>
     </div>
   )
 }
 
 // ==========================================
-// SUB-COMPONENTES
-// ==========================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ==========================================
-// 🔥 COMPONENTE: LISTA DE MEMBROS (Cole daqui para baixo)
-// ==========================================
-
-interface MembersListProps {
-  profiles: Profile[]
-  topProfiles: Profile[]
-  onProfileClick: (profile: Profile) => void
-}
-
-function MembersList({ profiles, topProfiles, onProfileClick }: MembersListProps) {
-  const formatNumber = (num: number): string => {
-    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
-    return num.toString()
-  }
-  
-  const outsideArena = profiles.filter(p => 
-    !topProfiles.some(top => top.username.toLowerCase() === p.username.toLowerCase())
-  )
-  
-  if (outsideArena.length === 0) {
-    return null
-  }
-  
-  return (
-    <div style={{
-      marginTop: '24px',
-      padding: '20px',
-      background: 'rgba(0, 191, 255, 0.03)',
-      border: '1px solid rgba(0, 191, 255, 0.15)',
-      borderRadius: '16px'
-    }}>
-
-      <h3 style={{
-        color: '#00bfff',
-        fontSize: '16px',
-        fontWeight: '700',
-        marginBottom: '16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        <span>📋</span>
-        Fora da Arena ({outsideArena.length})
-      </h3>
-      
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px'
-      }}>
-        {outsideArena.map((profile) => {
-            const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
-            
-            return (
-          <div 
-            key={profile.username}
-            onClick={() => onProfileClick(profile)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '12px',
-              background: 'rgba(0, 191, 255, 0.05)',
-              border: '1px solid rgba(0, 191, 255, 0.1)',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              position: 'relative'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 191, 255, 0.1)'
-              e.currentTarget.style.transform = 'translateX(4px)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'rgba(0, 191, 255, 0.05)'
-              e.currentTarget.style.transform = 'translateX(0)'
-            }}
-          >
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            <div style={{ position: 'relative' }}>
-              <img 
-                src={safeProfilePic}
-                alt={profile.username}
-                onError={(e) => handleImageError(e, profile.username)}
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '2px solid rgba(0, 191, 255, 0.3)',
-                  flexShrink: 0
-                }}
-              />
-              {profile.isVerified && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: '-2px',
-                  right: '-2px',
-                  background: '#00bfff',
-                  borderRadius: '50%',
-                  width: '16px',
-                  height: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '10px',
-                  fontWeight: 'bold',
-                  border: '2px solid #0a0a0f'
-                }}>
-                  ✓
-                </div>
-              )}
-            </div>
-            
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                color: '#fff',
-                fontSize: '15px',
-                fontWeight: '700',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                marginBottom: '4px'
-              }}>
-                @{profile.username}
-              </div>
-              <div style={{
-                color: 'rgba(0, 191, 255, 0.8)',
-                fontSize: '13px',
-                fontWeight: '600'
-              }}>
-                {formatNumber(profile.followers)} seguidores
-              </div>
-            </div>
-            
-            <div style={{
-              color: 'rgba(0, 191, 255, 0.5)',
-              fontSize: '20px',
-              fontWeight: 'bold'
-            }}>
-              →
-            </div>
-          </div>
-            )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ==========================================
-// ARENA
+// ARENA & FÍSICA
 // ==========================================
 
 interface ProfilesArenaProps {
   profiles: Profile[]
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
   creatorUsername: string
   currentUsername: string
   isUserMember: boolean
 }
 
-function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
-  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size?: number }>>({})
+// State armazena {x, y, size} para colisões precisas
+function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername }: ProfilesArenaProps) {
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number; size: number }>>({})
 
-  const updatePosition = useCallback((username: string, position: { x: number; y: number }, size?: number) => {
-    queueMicrotask(() => {
-      setPositions(prev => {
-        const current = prev[username]
-        
-        if (current && 
-            Math.abs(current.x - position.x) < 1 && 
-            Math.abs(current.y - position.y) < 1 &&
-            current.size === (size || current.size)) {
-          return prev
-        }
-        
-        return {
-          ...prev, 
-          [username]: { ...position, size: size || current?.size } 
-        }
-      })
-    })
-  }, [])
+  const updatePosition = (username: string, position: { x: number; y: number }, size: number) => {
+    setPositions(prev => ({ ...prev, [username]: { ...position, size } }))
+  }
 
   return (
     <div className="profiles-arena" style={{
@@ -643,6 +648,7 @@ function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
         <MovingProfile 
           key={profile.username}
           profile={profile}
+          onImageError={onImageError}
           onProfileClick={onProfileClick}
           allPositions={positions}
           updatePosition={updatePosition}
@@ -653,32 +659,52 @@ function ProfilesArena({ profiles, onProfileClick }: ProfilesArenaProps) {
   )
 }
 
+// ==========================================
+// MOVING PROFILE - CORRIGIDO E ROBUSTO
+// ==========================================
+
 interface MovingProfileProps {
   profile: Profile
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
   onProfileClick: (profile: Profile) => void
-  allPositions: Record<string, { x: number; y: number; size?: number }>
-  updatePosition: (username: string, position: { x: number; y: number }, size?: number) => void
+  allPositions: Record<string, { x: number; y: number; size: number }>
+  updatePosition: (username: string, position: { x: number; y: number }, size: number) => void
   isAdmin: boolean
 }
 
-function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, isAdmin }: MovingProfileProps) {
+function MovingProfile({ 
+  profile, 
+  onImageError, 
+  onProfileClick, 
+  allPositions, 
+  updatePosition, 
+  isAdmin 
+}: MovingProfileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
+  
+  // Velocidade em linha reta (direção normalizada)
   const velocityRef = useRef({ x: 0, y: 0 })
-  const isInitializedRef = useRef(false)
   
-  const lastWallCollisionTime = useRef(0)
+  // Cooldowns individuais para cada colisão
   const collisionCooldowns = useRef<Record<string, number>>({})
+  const COLLISION_COOLDOWN = 1000 // 1 segundo para colisões entre bolinhas
   
-  const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
-  const BOUNDARY_PADDING = 5 
+  // Cooldown específico para colisões com a parede
+  const lastWallCollisionTime = useRef(0)
+  const WALL_COLLISION_COOLDOWN = 200 // 0.2 segundos para colisões com parede
+  
+  const isInitializedRef = useRef(false)
+  const BOUNDARY_PADDING = 5
 
-  const WALL_COLLISION_COOLDOWN = 200
-  const COLLISION_COOLDOWN = 200
+  // ==========================================
+  // CÁLCULOS AUXILIARES
+  // ==========================================
 
+  // Define tamanho da bolinha com base nos seguidores (Logarítmico)
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 45
     const MAX_SIZE = 100
@@ -693,15 +719,103 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
 
   const imageSize = calculateImageSize(profile.followers)
 
-  const checkCollision = (pos1: { x: number; y: number }, pos2: { x: number; y: number }, size1: number, size2: number): boolean => {
-    const center1 = { x: pos1.x + size1 / 2, y: pos1.y + size1 / 2 }
-    const center2 = { x: pos2.x + size2 / 2, y: pos2.y + size2 / 2 }
-    const dx = center1.x - center2.x
-    const dy = center1.y - center2.y
+  // Verifica se duas bolinhas estão colidindo (Soma dos raios)
+  const checkCollision = (
+    pos1: { x: number; y: number }, 
+    pos2: { x: number; y: number }, 
+    size1: number, 
+    size2: number
+  ): boolean => {
+    const dx = pos1.x - pos2.x
+    const dy = pos1.y - pos2.y
     const distance = Math.sqrt(dx * dx + dy * dy)
-    return distance < (size1 + size2) / 2
+    
+    const radius1 = size1 / 2
+    const radius2 = size2 / 2
+    // +5px de margem para evitar overlap visual
+    return distance < (radius1 + radius2) + 5
   }
 
+  // Encontra a melhor direção livre para "fugir" de aglomerações
+  const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
+    const arena = containerRef.current?.parentElement
+    if (!arena) return { x: 1, y: 0 }
+
+    const arenaWidth = arena.offsetWidth
+    const arenaHeight = arena.offsetHeight
+    const NUM_DIRECTIONS = 16 // Testa 16 direções radiais
+
+    let bestDirection = { x: 0, y: 0 }
+    let maxMinDistance = 0
+
+    for (let i = 0; i < NUM_DIRECTIONS; i++) {
+      const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
+      const testDirection = {
+        x: Math.cos(angle),
+        y: Math.sin(angle)
+      }
+
+      let minDistanceInDirection = Infinity
+
+      // 1. Distância até Paredes nesta direção
+      if (testDirection.x > 0) {
+         const dist = (arenaWidth - currentPos.x - imageSize) / testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.x < 0) {
+         const dist = (currentPos.x - BOUNDARY_PADDING) / -testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y > 0) {
+         const dist = (arenaHeight - currentPos.y - imageSize) / testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y < 0) {
+         const dist = (currentPos.y - BOUNDARY_PADDING) / -testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+
+      // 2. Distância até Outras Bolinhas nesta direção
+      Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+        if (username === profile.username || !otherPos) return
+
+        const dx = otherPos.x - currentPos.x
+        const dy = otherPos.y - currentPos.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        // Vetor normalizado apontando para a outra bolinha
+        const directionToOther = { x: dx / distance, y: dy / distance }
+        // Produto escalar para saber se a outra bolinha está na direção que estamos testando
+        const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
+
+        // Se estiver num cone de visão à frente (> 0.3), considera a distância
+        if (dotProduct > 0.3) {
+          minDistanceInDirection = Math.min(minDistanceInDirection, distance)
+        }
+      })
+
+      // Escolhe a direção que tem o maior espaço livre
+      if (minDistanceInDirection > maxMinDistance) {
+        maxMinDistance = minDistanceInDirection
+        bestDirection = testDirection
+      }
+    }
+
+    // Se estiver tudo bloqueado, escolhe aleatório
+    if (maxMinDistance === 0) {
+      const randomAngle = Math.random() * Math.PI * 2
+      bestDirection = {
+        x: Math.cos(randomAngle),
+        y: Math.sin(randomAngle)
+      }
+    }
+
+    return bestDirection
+  }
+
+  // ==========================================
+  // INICIALIZAÇÃO
+  // ==========================================
   useEffect(() => {
     if (!containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -709,48 +823,9 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
 
-    const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
-      const NUM_DIRECTIONS = 16
-      let bestDirection = { x: 0, y: 0 }
-      let maxMinDistance = 0
-  
-      for (let i = 0; i < NUM_DIRECTIONS; i++) {
-        const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
-        const testDirection = { x: Math.cos(angle), y: Math.sin(angle) }
-        let minDistanceInDirection = Infinity
-  
-        if (testDirection.x > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaWidth - currentPos.x - imageSize) / testDirection.x)
-        if (testDirection.x < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.x - BOUNDARY_PADDING) / -testDirection.x)
-        if (testDirection.y > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaHeight - currentPos.y - imageSize) / testDirection.y)
-        if (testDirection.y < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.y - BOUNDARY_PADDING) / -testDirection.y)
-  
-        Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
-          if (username === profile.username || !otherPos) return
-          const dx = otherPos.x - currentPos.x
-          const dy = otherPos.y - currentPos.y
-          const distance = Math.sqrt(dx * dx + dy * dy)
-          const directionToOther = { x: dx / distance, y: dy / distance }
-          const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
-          if (dotProduct > 0.3) minDistanceInDirection = Math.min(minDistanceInDirection, distance)
-        })
-  
-        if (minDistanceInDirection > maxMinDistance) {
-          maxMinDistance = minDistanceInDirection
-          bestDirection = testDirection
-        }
-      }
-  
-      if (maxMinDistance === 0) {
-        const randomAngle = Math.random() * Math.PI * 2
-        bestDirection = { x: Math.cos(randomAngle), y: Math.sin(randomAngle) }
-      }
-      return bestDirection
-    }
-
     if (!isInitializedRef.current) {
-      let initialX = 0;
-      let initialY = 0;
-      let attempts = 0;
+      // Tenta encontrar uma posição inicial livre de colisão
+      let initialX, initialY, attempts = 0
       
       do {
         initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
@@ -764,12 +839,23 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
       )
 
       setPosition({ x: initialX, y: initialY })
-      const baseSpeed = profile.isVerified ? 0.8 : 0.6
+      updatePosition(profile.username, { x: initialX, y: initialY }, imageSize)
+
+      // Define velocidade inicial
+      const baseSpeed = profile.isVerified ? 0.8 : 0.6 // Verificados são mais rápidos
       const direction = findBestDirection({ x: initialX, y: initialY })
-      velocityRef.current = { x: direction.x * baseSpeed, y: direction.y * baseSpeed }
+      
+      velocityRef.current = {
+        x: direction.x * baseSpeed,
+        y: direction.y * baseSpeed
+      }
+
       isInitializedRef.current = true
     }
 
+    // ==========================================
+    // LOOP DE ANIMAÇÃO
+    // ==========================================
     const animate = () => {
       if (isHovered) {
         animationRef.current = requestAnimationFrame(animate)
@@ -777,43 +863,57 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
       }
 
       setPosition(prev => {
+        // 1️⃣ MOVIMENTO LINEAR
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
+
         let needsNewDirection = false
         const currentTime = Date.now()
 
+        // 2️⃣ COLISÃO COM PAREDES (COM COOLDOWN)
         const timeSinceWallCollision = currentTime - lastWallCollisionTime.current
         const canCheckWallCollision = timeSinceWallCollision > WALL_COLLISION_COOLDOWN
 
         if (canCheckWallCollision) {
-            let hitWall = false
-            if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
-                newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
-                hitWall = true
-                needsNewDirection = true
-            }
-            if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
-                newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
-                hitWall = true
-                needsNewDirection = true
-            }
-            if (hitWall) lastWallCollisionTime.current = currentTime
-        } else {
+          let hitWall = false
+          // Parede Esquerda/Direita
+          if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
             newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          // Parede Cima/Baixo
+          if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
             newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          
+          if (hitWall) {
+            lastWallCollisionTime.current = currentTime
+          }
+        } else {
+          // Em cooldown: Apenas mantém dentro, sem disparar mudança de direção
+          newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+          newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
 
         const newPos = { x: newX, y: newY }
 
+        // 3️⃣ COLISÃO COM OUTRAS BOLINHAS (COM COOLDOWN INDIVIDUAL)
         if (!needsNewDirection) {
           Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
             if (username === profile.username || !otherPos) return
 
+            // Pega o cooldown específico para esta bolinha
             const lastCollision = collisionCooldowns.current[username] || 0
             const canCollideWithThisBall = (currentTime - lastCollision) > COLLISION_COOLDOWN
+
+            // Pega o tamanho real da outra bolinha
             const otherSize = otherPos.size || imageSize
 
             if (checkCollision(newPos, otherPos, imageSize, otherSize)) {
+              // EMPURRÃO FÍSICO (Sempre acontece para evitar sobreposição visual)
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
@@ -821,29 +921,37 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
               if (distance > 0) {
                 const radius1 = imageSize / 2
                 const radius2 = otherSize / 2
+                // Quanto elas estão sobrepostas?
                 const overlap = (radius1 + radius2) - distance
 
                 if (overlap > 0) {
-                    const pushDistance = overlap / 2 + 2
+                    const pushDistance = overlap / 2 + 2 // Empurra metade da sobreposição + margem
                     newPos.x += (dx / distance) * pushDistance
                     newPos.y += (dy / distance) * pushDistance
                 }
               }
 
+              // MUDANÇA DE DIREÇÃO (Só acontece se o cooldown permitir)
               if (canCollideWithThisBall) {
-                needsNewDirection = true
-                collisionCooldowns.current[username] = currentTime
+                  needsNewDirection = true
+                  collisionCooldowns.current[username] = currentTime // Marca cooldown para essa bolinha
               }
             }
           })
         }
 
+        // 4️⃣ RECALCULA DIREÇÃO (se necessário)
         if (needsNewDirection) {
           const baseSpeed = profile.isVerified ? 0.8 : 0.6
           const bestDirection = findBestDirection(newPos)
-          velocityRef.current = { x: bestDirection.x * baseSpeed, y: bestDirection.y * baseSpeed }
+
+          velocityRef.current = {
+            x: bestDirection.x * baseSpeed,
+            y: bestDirection.y * baseSpeed
+          }
         }
 
+        // Atualiza posição global para que outras bolinhas saibam onde estou
         updatePosition(profile.username, newPos, imageSize)
         return newPos
       })
@@ -853,8 +961,11 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
 
     animationRef.current = requestAnimationFrame(animate)
     return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
-  }, [isHovered, allPositions, profile.username, imageSize, profile.isVerified, updatePosition])
+  }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
+  // ==========================================
+  // TOOLTIP INTELIGENTE (mantido igual)
+  // ==========================================
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
     const arena = containerRef.current.parentElement
@@ -862,21 +973,24 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
     const arenaWidth = arena.offsetWidth
     const tooltipHeight = 80
     const tooltipWidth = 150
+
     let vertical = 'top'
     let horizontal = 'center'
+
     if (position.y < tooltipHeight) vertical = 'bottom'
     if (position.x < tooltipWidth / 2) horizontal = 'left'
     else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
+
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
-  const getTooltipClass = () => {
+  const getTooltipClass = (): string => {
     const classes = ['profile-info']
     if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
     if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
@@ -884,6 +998,9 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
     return classes.join(' ')
   }
 
+  // ==========================================
+  // RENDER
+  // ==========================================
   return (
     <div 
       ref={containerRef} 
@@ -895,14 +1012,28 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
         height: `${imageSize}px`, 
         position: 'absolute', 
         touchAction: 'none',
-        transition: 'none'
+        transition: 'none' // Remove transições CSS para movimento fluido
       }} 
       onMouseEnter={() => setIsHovered(true)} 
       onMouseLeave={() => setIsHovered(false)}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
     >
-      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
+      {isAdmin && (
+        <div 
+          className="admin-crown" 
+          style={{
+            position: 'absolute', 
+            top: '-5px', 
+            right: '-5px', 
+            fontSize: `${imageSize * 0.25}px`, 
+            zIndex: 10
+          }}
+        >
+          👑
+        </div>
+      )}
+
       {isHovered && (
         <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
           <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
@@ -911,11 +1042,12 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
           <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
+
       <img 
-        src={safeProfilePic} 
+        src={profile.profilePic} 
         alt={profile.username} 
         className="profile-pic" 
-        onError={(e) => handleImageError(e, profile.username)}
+        onError={(e) => onImageError(e, profile.username)}
         onClick={(e) => { e.stopPropagation(); onProfileClick(profile) }} 
         loading="lazy"
         style={{
@@ -936,11 +1068,10 @@ function MovingProfile({ profile, onProfileClick, allPositions, updatePosition, 
 interface ProfileModalProps {
   profile: Profile
   onClose: () => void
+  onImageError: (e: React.SyntheticEvent<HTMLImageElement>, username: string) => void
 }
 
-function ProfileModal({ profile, onClose }: ProfileModalProps) {
-  const safeProfilePic = processInstagramImageUrl(profile.profilePic, profile.username)
-
+function ProfileModal({ profile, onClose, onImageError }: ProfileModalProps) {
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
@@ -992,10 +1123,10 @@ function ProfileModal({ profile, onClose }: ProfileModalProps) {
         
         <div className="modal-header-compact" style={{padding: '25px 20px 20px'}}>
           <img 
-            src={safeProfilePic} 
+            src={profile.profilePic} 
             alt={profile.username} 
             className="modal-profile-pic-small" 
-            onError={(e) => handleImageError(e, profile.username)}
+            onError={(e) => onImageError(e, profile.username)}
             loading="lazy"
             style={{
               width: '70px',

@@ -1,44 +1,37 @@
-
 // app/api/cron/atualizar-usuarios/route.js
 import { NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 import { scrapeInstagramProfile } from '@/lib/instagram-service'
 
-// Força que a rota seja dinâmica para não cachear resultados antigos
+// 🔥 Força a rota a ser dinâmica para não fazer cache
 export const dynamic = 'force-dynamic'
+// 🔥 Tenta estender o tempo limite (funciona no plano Pro, no Hobby é ignorado mas não custa tentar)
+export const maxDuration = 60; 
 
 export async function GET(request) {
-  // 🔒 SEGURANÇA: (Opcional) Verifique se a chamada vem do Vercel Cron
-  // const authHeader = request.headers.get('authorization')
-  // if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-  //   return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  // }
+  // REMOVI O BLOQUEIO DE PRODUÇÃO AQUI. AGORA ELE VAI RODAR.
 
-  console.log('🏁 INICIANDO CRON (MODO INTELIGENTE)...')
+  console.log('🏁 INICIANDO CRON JOB...')
 
   try {
-    // 🧠 A LÓGICA INTELIGENTE:
-    // 1. Pega quem tem updated_at NULL (novos usuários)
-    // 2. OU quem foi atualizado há mais de 24 horas
-    // 3. Ordena pelos mais antigos primeiro (ASC)
-    // 4. Limita a 5 por execução (Segurança contra bloqueio)
-    
+    // 1️⃣ SELEÇÃO MAIS CONSERVADORA
+    // Mudamos LIMIT 5 para LIMIT 2 para evitar TIMEOUT da Vercel (10s limite)
     const usuariosResult = await sql`
       SELECT username FROM usuarios 
       WHERE updated_at IS NULL 
-         OR updated_at < NOW() - INTERVAL '24 hours'
+         OR updated_at < NOW() - INTERVAL '3 days'
       ORDER BY updated_at ASC NULLS FIRST
-      LIMIT 5
+      LIMIT 2
     `
 
     const totalUsuarios = usuariosResult.rows.length
     
     if (totalUsuarios === 0) {
-      console.log('✅ Tudo em dia! Ninguém para atualizar.')
-      return NextResponse.json({ message: 'Todos os usuários estão atualizados.', updated: 0 })
+      console.log('✅ Todos os usuários estão atualizados.')
+      return NextResponse.json({ message: 'Nada para atualizar', updated: 0 })
     }
 
-    console.log(`📋 Fila Inteligente: ${totalUsuarios} usuários para atualizar...`)
+    console.log(`📋 ${totalUsuarios} usuários na fila para atualizar...`)
 
     let atualizados = 0
     let erros = 0
@@ -50,46 +43,60 @@ export async function GET(request) {
       try {
         console.log(`🔄 Atualizando @${username}...`)
         
-        // Delay aleatório entre 2s e 5s para parecer humano
-        const delay = Math.floor(Math.random() * (5000 - 2000 + 1) + 2000)
+        // Delay menor (1s a 3s) para economizar tempo de execução da Vercel
+        const delay = Math.floor(Math.random() * (3000 - 1000 + 1) + 1000)
         await new Promise(r => setTimeout(r, delay)) 
 
         const data = await scrapeInstagramProfile(username)
         
-        if (data) {
-          // Atualiza Tabela Mestra
+        // 2️⃣ VALIDAÇÃO BLINDADA (Igual usamos na criação de grupo)
+        // Só atualiza se tiver seguidores OU se a foto não for o avatar padrão
+        const isValid = data && (
+            data.followers > 0 || 
+            (data.profilePic && !data.profilePic.includes('ui-avatars'))
+        );
+
+        if (isValid) {
+          // Atualiza Tabela de Usuários
           await sql`
             UPDATE usuarios SET
               full_name = ${data.fullName},
               profile_pic = ${data.profilePic},
               followers = ${data.followers},
+              following = ${data.following},
               posts = ${data.posts},
+              biography = ${data.biography},
               updated_at = NOW()
             WHERE username = ${username}
           `
-           // Atualiza Grupos (Réplica)
+          
+          // Atualiza os membros dentro dos grupos (para a foto mudar lá também)
           await sql`
-            UPDATE grupo_membros SET profile_pic = ${data.profilePic}
+            UPDATE grupo_membros SET 
+              profile_pic = ${data.profilePic},
+              followers = ${data.followers}
             WHERE username = ${username}
           `
+          
           console.log(`   ✅ Sucesso!`)
           atualizados++
-          resultados.push({ username, status: 'ok' })
+          resultados.push({ username, status: 'updated' })
         } else {
-            console.log(`   ⚠️ Falha (Scraper retornou null)`)
-            // ESTRATÉGIA ANTI-TRAVAMENTO:
-            // Se falhar, atualiza a data para "agora" mesmo sem dados.
-            // Isso joga o usuário pro fim da fila e evita que o Cron
-            // fique tentando atualizar o mesmo perfil bugado infinitamente.
-            await sql`UPDATE usuarios SET updated_at = NOW() WHERE username = ${username}`
-            
-            erros++
-            resultados.push({ username, status: 'skipped_error' })
+          console.log(`   ⚠️ Falha/Bloqueio. Mantendo dados antigos.`)
+          
+          // 3️⃣ ESTRATÉGIA DE BACKOFF
+          // Se falhou, atualizamos o 'updated_at' para AGORA.
+          // Isso joga o usuário para o final da fila. 
+          // Se não fizermos isso, o Cron vai tentar o mesmo usuário falho a cada minuto.
+          await sql`UPDATE usuarios SET updated_at = NOW() WHERE username = ${username}`
+          
+          erros++
+          resultados.push({ username, status: 'skipped_block' })
         }
 
       } catch (error) {
-        console.error(`   ❌ Erro Crítico em @${username}:`, error.message)
-        // Joga pro fim da fila também em caso de erro de conexão
+        console.error(`   ❌ Erro processando ${username}:`, error.message)
+        // Joga pro final da fila também em caso de erro
         await sql`UPDATE usuarios SET updated_at = NOW() WHERE username = ${username}`
         resultados.push({ username, error: error.message })
         erros++
@@ -99,7 +106,7 @@ export async function GET(request) {
     return NextResponse.json({ 
       success: true, 
       updated: atualizados, 
-      errors: erros,
+      skipped: erros,
       details: resultados 
     })
 
