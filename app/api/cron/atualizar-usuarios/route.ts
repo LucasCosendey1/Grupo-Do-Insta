@@ -4,10 +4,8 @@ import { sql } from '@vercel/postgres'
 
 /**
  * 🕐 CRON JOB: Atualizar todos os usuários
- * 
- * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)
- * 
- * O que faz:
+ * * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)
+ * * O que faz:
  * 1. Busca TODOS os usuários do banco
  * 2. Para cada um, faz scrape do Instagram
  * 3. Atualiza os dados no banco
@@ -117,13 +115,15 @@ export async function GET(request: NextRequest) {
         await new Promise(resolve => setTimeout(resolve, 2000))
 
       } catch (error) {
-        console.error(`   ❌ @${username} - Erro: ${error.message}`)
+        // CORREÇÃO 1: Adicionado (error as Error)
+        console.error(`   ❌ @${username} - Erro: ${(error as Error).message}`)
         
         erros++
         resultados.push({
           username,
           success: false,
-          error: error.message
+          // CORREÇÃO 2: Adicionado (error as Error) aqui também
+          error: (error as Error).message
         })
       }
     }
@@ -156,7 +156,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: false,
-      error: error.message
+      // CORREÇÃO 3: Adicionado (error as Error) no bloco final
+      error: (error as Error).message
     }, { status: 500 })
   }
 }

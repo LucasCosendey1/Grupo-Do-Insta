@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { sql } from '@vercel/postgres'
 import '../../globals.css'
 
 // ==========================================
@@ -825,7 +826,7 @@ function MovingProfile({
 
     if (!isInitializedRef.current) {
       // Tenta encontrar uma posição inicial livre de colisão
-      let initialX, initialY, attempts = 0
+      let initialX = 0, initialY = 0, attempts = 0
       
       do {
         initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
