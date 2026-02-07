@@ -1,9 +1,12 @@
-// app/login/page.tsx
+// app/login/page-CLIENT-SIDE.tsx
+// Exemplo de como usar o scraping client-side
+
 'use client'
 
-import { useState, useEffect, useRef, Suspense } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { searchInstagramProfileCached } from '@/lib/client-side-scraper'
 import '../globals.css'
 
 interface ProfileSearchResult {
@@ -18,26 +21,21 @@ interface ProfileSearchResult {
   isVerified: boolean
 }
 
-function LoginContent() {
+export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-
-  // ✅ 1. Identificar se é fluxo de convite
-  const context = searchParams.get('context')
-  const groupName = searchParams.get('gName')
-  const groupEmoji = searchParams.get('gEmoji')
-  const isJoinFlow = context === 'join' && groupName
-
+  
   const [searchTerm, setSearchTerm] = useState('')
   const [searchResults, setSearchResults] = useState<ProfileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState<ProfileSearchResult | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
-  // --- LÓGICA DE BUSCA (Mantida igual) ---
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const inputRef = useRef<HTMLDivElement>(null)
+
+  // Busca automática COM SCRAPING CLIENT-SIDE
   useEffect(() => {
     if (searchTerm.length < 2) {
       setSearchResults([])
@@ -54,35 +52,44 @@ function LoginContent() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
-        const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
         
-        if (response.ok) {
-          const data = await response.json()
-          const profiles: ProfileSearchResult[] = [{
-            username: data.username,
-            fullName: data.fullName || data.username,
-            profilePic: data.profilePic,
-            followers: data.followers || 0,
-            following: data.following || 0,
-            posts: data.posts || 0,
-            biography: data.biography || '',
-            isPrivate: data.isPrivate || false,
-            isVerified: data.isVerified || false
-          }]
-          setSearchResults(profiles)
+        console.log('🔍 Buscando perfil usando IP do usuário...')
+        
+        // ✅ USA O IP DO USUÁRIO PARA FAZER A BUSCA!
+        const profile = await searchInstagramProfileCached(cleanUsername)
+        
+        if (profile) {
+          console.log('✅ Perfil encontrado:', profile.username)
+          
+          // Processar foto para usar proxy se necessário
+          let profilePic = profile.profilePic
+          
+          if (profilePic && !profilePic.includes('ui-avatars.com') && !profilePic.startsWith('/api/')) {
+            // Usar proxy para imagens do Instagram
+            profilePic = `/api/image-proxy?url=${encodeURIComponent(profilePic)}&username=${profile.username}`
+          }
+          
+          const processedProfile: ProfileSearchResult = {
+            ...profile,
+            profilePic: profilePic || `https://ui-avatars.com/api/?name=${profile.username}&size=200&background=00bfff&color=fff`
+          }
+          
+          setSearchResults([processedProfile])
           setShowResults(true)
         } else {
+          console.log('❌ Perfil não encontrado')
           setSearchResults([])
           setShowResults(false)
         }
+        
       } catch (error) {
-        console.error('Erro ao buscar perfis:', error)
+        console.error('❌ Erro ao buscar perfil:', error)
         setSearchResults([])
         setShowResults(false)
       } finally {
         setIsSearching(false)
       }
-    }, 500)
+    }, 800) // 800ms de delay para evitar muitas requisições
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -91,6 +98,7 @@ function LoginContent() {
     }
   }, [searchTerm])
 
+  // Fechar dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (inputRef.current && !inputRef.current.contains(event.target as Node)) {
@@ -118,6 +126,7 @@ function LoginContent() {
     try {
       console.log('🔄 Sincronizando dados com o banco...')
       
+      // Sincronizar com banco de dados
       const syncResponse = await fetch('/api/usuarios/sincronizar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,7 +145,7 @@ function LoginContent() {
       })
 
       if (!syncResponse.ok) {
-        console.error('⚠️ Falha na sincronização, mas continuando...')
+        console.warn('⚠️ Falha na sincronização, mas continuando...')
       } else {
         console.log('✅ Dados sincronizados com sucesso!')
       }
@@ -150,7 +159,7 @@ function LoginContent() {
     
     setIsSyncing(false)
     
-    // ✅ REDIRECIONAMENTO INTELIGENTE
+    // Redirecionamento inteligente
     const redirectUrl = localStorage.getItem('redirectAfterLogin')
     
     if (redirectUrl) {
@@ -174,71 +183,47 @@ function LoginContent() {
   return (
     <div className="container">
       <div className="card login-card">
+        <Link href="/" className="btn-back">
+          <span className="back-arrow">←</span>
+          <span>Voltar</span>
+        </Link>
 
-        {/* ✅ 2. HEADER CONDICIONAL */}
         <div className="header">
-          {isJoinFlow ? (
-             // Visual de Convite
-             <>
-               <div className="logo create-logo" style={{ marginBottom: '15px' }}>
-                 <div className="logo-inner" style={{ fontSize: '2.5rem' }}>
-                   {groupEmoji || '👥'}
-                 </div>
-               </div>
-               <h1 style={{ fontSize: '1.6rem' }}>Entrar em "{groupName}"</h1>
-               <p className="subtitle" style={{ color: '#fff', opacity: 0.9, marginTop: '8px' }}>
-                 Informe o seu @ do Instagram para entrar no grupo
-               </p>
-             </>
-          ) : (
-             // Visual Padrão
-             <>
-               <div className="logo login-logo">
-                 <div className="logo-inner">🔐</div>
-               </div>
-               <h1>Entrar no Insta Grupos</h1>
-               <p className="subtitle">Conecte-se com seu perfil do Instagram</p>
-             </>
-          )}
+          <div className="logo login-logo">
+            <div className="logo-inner">🔐</div>
+          </div>
+          <h1>Entrar no Insta Grupos</h1>
+          <p className="subtitle">Conecte-se com seu perfil do Instagram</p>
+          <p className="subtitle" style={{ fontSize: '12px', marginTop: '8px', color: 'rgba(255,255,255,0.6)' }}>
+            🌐 Usando seu IP para buscar perfil (mais confiável)
+          </p>
         </div>
 
         <div className="login-content">
           <div className="input-group" ref={inputRef}>
             <label htmlFor="instagram-search">
               <span className="label-icon">@</span>
-              {isJoinFlow ? 'Seu usuário do Insta' : 'Buscar seu perfil'}
+              Seu username do Instagram
             </label>
-            <div className="input-wrapper">
-              
-              {/* 👇👇👇 AQUI ESTÁ A MUDANÇA PARA O NEON VERDE SEMPRE ACESO 👇👇👇 */}
-              <input
-                type="text"
-                id="instagram-search"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value)
-                  if (selectedProfile) setSelectedProfile(null)
-                }}
-                onFocus={() => {
-                  if (searchResults.length > 0) setShowResults(true)
-                }}
-                placeholder="Digite seu @username"
-                className="input input-search"
-                autoComplete="off"
-                style={{
-                  borderColor: '#00ff88', // Cor da borda Neon
-                  boxShadow: '0 0 20px rgba(0, 255, 136, 0.4)', // O brilho Neon (Sempre Ativo)
-                  transition: 'all 0.3s ease'
-                }}
-              />
-              {/* 👆👆👆 FIM DA MUDANÇA 👆👆👆 */}
+            <input
+              type="text"
+              id="instagram-search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onFocus={() => {
+                if (searchResults.length > 0) setShowResults(true)
+              }}
+              placeholder="Digite seu @username"
+              className="input"
+              autoComplete="off"
+            />
 
-              {isSearching && (
-                <div className="search-loading">
-                  <div className="mini-spinner"></div>
-                </div>
-              )}
-            </div>
+            {isSearching && (
+              <div className="search-loading">
+                <div className="spinner"></div>
+                <span>Buscando via seu IP...</span>
+              </div>
+            )}
 
             {showResults && searchResults.length > 0 && (
               <div className="search-results-dropdown">
@@ -248,30 +233,22 @@ function LoginContent() {
                     className="search-result-item"
                     onClick={() => handleSelectProfile(profile)}
                   >
-                    <div className="result-avatar-wrapper">
-                      <img
-                        src={profile.profilePic}
-                        alt={profile.username}
-                        className="search-result-avatar"
-                        onError={(e) => handleImageError(e, profile.username)}
-                      />
-                      {profile.isVerified && (
-                        <div className="verified-badge-overlay">✓</div>
-                      )}
-                    </div>
+                    <img
+                      src={profile.profilePic}
+                      alt={profile.username}
+                      className="search-result-avatar"
+                      onError={(e) => handleImageError(e, profile.username)}
+                    />
                     <div className="search-result-info">
                       <div className="search-result-username">
                         @{profile.username}
+                        {profile.isVerified && <span className="verified-badge">✓</span>}
                       </div>
-                      <div className="search-result-details">
-                        <span className="search-result-name">{profile.fullName}</span>
-                        <span className="search-result-separator">•</span>
-                        <span className="search-result-followers">
-                          {formatNumber(profile.followers)} seguidores
-                        </span>
+                      <div className="search-result-name">{profile.fullName}</div>
+                      <div className="search-result-stats">
+                        {formatNumber(profile.followers)} seguidores
                       </div>
                     </div>
-                    <div className="result-arrow">→</div>
                   </div>
                 ))}
               </div>
@@ -279,86 +256,41 @@ function LoginContent() {
           </div>
 
           {selectedProfile && (
-            <div className="selected-profile-preview">
-              <div className="preview-badge">Perfil Selecionado</div>
-              <div className="selected-profile-content">
-                <div className="selected-avatar-wrapper">
-                  <img
-                    src={selectedProfile.profilePic}
-                    alt={selectedProfile.username}
-                    className="selected-profile-avatar"
-                    onError={(e) => handleImageError(e, selectedProfile.username)}
-                  />
-                  {selectedProfile.isVerified && (
-                    <div className="verified-badge-large">✓</div>
-                  )}
+            <div className="selected-profile">
+              <img
+                src={selectedProfile.profilePic}
+                alt={selectedProfile.username}
+                onError={(e) => handleImageError(e, selectedProfile.username)}
+              />
+              <div className="selected-profile-info">
+                <div className="selected-profile-username">
+                  @{selectedProfile.username}
+                  {selectedProfile.isVerified && <span className="verified-badge">✓</span>}
                 </div>
-                <div className="selected-profile-info">
-                  <div className="selected-profile-username">
-                    @{selectedProfile.username}
-                  </div>
-                  <div className="selected-profile-name">{selectedProfile.fullName}</div>
-                  <div className="selected-profile-stats">
-                    <div className="stat-pill">
-                      <span className="stat-icon">👥</span>
-                      <span className="stat-value">{formatNumber(selectedProfile.followers)}</span>
-                    </div>
-                  </div>
+                <div className="selected-profile-name">{selectedProfile.fullName}</div>
+                <div className="selected-profile-stats">
+                  {formatNumber(selectedProfile.followers)} seguidores
                 </div>
               </div>
             </div>
           )}
 
-          {/* ✅ 3. BOTÃO CONDICIONAL */}
-          <button 
-            className={`btn ${selectedProfile ? 'btn-primary' : 'btn-disabled'}`}
+          <button
             onClick={handleLogin}
             disabled={!selectedProfile || isSyncing}
+            className={`btn ${selectedProfile ? 'btn-primary' : 'btn-disabled'}`}
           >
             {isSyncing ? (
               <>
-                <span className="btn-icon">🔄</span>
-                <span>Sincronizando...</span>
-              </>
-            ) : selectedProfile ? (
-              <>
-                <span className="btn-icon">✨</span>
-                {/* Texto do botão muda se for fluxo de convite */}
-                <span>
-                    {isJoinFlow 
-                      ? `Entrar no Grupo como @${selectedProfile.username}`
-                      : `Continuar como @${selectedProfile.username}`
-                    }
-                </span>
-                <span className="btn-arrow">→</span>
+                <div className="spinner"></div>
+                Entrando...
               </>
             ) : (
-              <>
-                <span className="btn-icon">🔍</span>
-                <span>Busque seu perfil acima</span>
-              </>
+              '🚀 Entrar'
             )}
           </button>
         </div>
       </div>
     </div>
-  )
-}
-
-// ✅ Wrapper com Suspense (Obrigatório para useSearchParams no Next.js)
-export default function LoginPage() {
-  return (
-    <Suspense fallback={
-        <div className="container">
-            <div className="card login-card">
-                <div className="loading-state">
-                    <div className="spinner"></div>
-                    <p>Carregando...</p>
-                </div>
-            </div>
-        </div>
-    }>
-      <LoginContent />
-    </Suspense>
   )
 }
