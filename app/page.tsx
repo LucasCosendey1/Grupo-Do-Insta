@@ -26,6 +26,9 @@ interface Group {
   creator?: string
 }
 
+// 👑 CONSTANTE DO ADMIN
+const ADMIN_USERNAME = 'instadogrupo.oficial'
+
 export default function Home() {
   const router = useRouter()
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
@@ -41,6 +44,9 @@ export default function Home() {
   // Estados de Edição
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [newGroupName, setNewGroupName] = useState('')
+
+  // 👑 VERIFICAÇÃO DE ADMIN
+  const isAdmin = userProfile?.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
 
   const getGroupIdentifier = (group: Group): string => {
     return group.slug || group.id
@@ -59,10 +65,21 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // 🔄 CARREGAMENTO DE GRUPOS (ATUALIZADO PARA ADMIN)
   const loadUserGroups = useCallback(async (username: string) => {
     try {
       const timestamp = new Date().getTime()
-      const response = await fetch(`/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&_t=${timestamp}`, {
+      
+      // 🔥 SE FOR ADMIN, BUSCA TODOS OS GRUPOS
+      const endpoint = username.toLowerCase() === ADMIN_USERNAME.toLowerCase()
+        ? `/api/grupos/todos?_t=${timestamp}`
+        : `/api/grupos/meus-grupos?username=${encodeURIComponent(username)}&_t=${timestamp}`
+      
+      console.log(username.toLowerCase() === ADMIN_USERNAME.toLowerCase() 
+        ? '👑 ADMIN: Carregando TODOS os grupos' 
+        : '👤 USER: Carregando meus grupos')
+
+      const response = await fetch(endpoint, {
         cache: 'no-store',
         headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache, no-store, must-revalidate' }
       })
@@ -205,6 +222,8 @@ export default function Home() {
 
   const isGroupAdmin = (group: Group): boolean => {
     if (!userProfile) return false
+    // Se for o admin geral, tem permissão em tudo
+    if (isAdmin) return true; 
     return group.creator?.toLowerCase() === userProfile.username.toLowerCase()
   }
 
@@ -323,9 +342,27 @@ export default function Home() {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
                 flex: 1,
-                minWidth: 0
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
               }}>
                 @{userProfile?.username}
+                {isAdmin && (
+                  <span style={{
+                    background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
+                    color: '#000',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    fontSize: '10px',
+                    fontWeight: '800',
+                    letterSpacing: '0.5px',
+                    textTransform: 'uppercase',
+                    boxShadow: '0 2px 8px rgba(255, 215, 0, 0.4)'
+                  }}>
+                    Admin
+                  </span>
+                )}
               </span>
               <button 
                 onClick={handleLogout} 
@@ -397,11 +434,12 @@ export default function Home() {
             <div className="user-groups-section" style={{
               marginTop: '30px'
             }}>
+              {/* TÍTULO CONDICIONAL */}
               <h2 className="section-title" style={{
                 fontSize: '18px',
                 marginBottom: '16px'
               }}>
-                📂 Seus Grupos
+                {isAdmin ? '👑 Todos os Grupos (Admin)' : '📂 Seus Grupos'}
               </h2>
 
               {isLoading ? (
@@ -733,6 +771,100 @@ export default function Home() {
                 </div>
               )}
             </div>
+        </div>
+
+        {/* 💬 SUPORTE - FINAL DA PÁGINA */}
+        <div className="support-section" style={{
+          marginTop: '48px',
+          paddingTop: '32px',
+          borderTop: '1px solid rgba(0, 191, 255, 0.2)',
+          textAlign: 'center'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(0, 191, 255, 0.05) 0%, rgba(0, 128, 255, 0.05) 100%)',
+            border: '1px solid rgba(0, 191, 255, 0.2)',
+            borderRadius: '16px',
+            padding: '24px 20px',
+            marginBottom: '16px'
+          }}>
+            <div style={{
+              fontSize: '32px',
+              marginBottom: '12px',
+              filter: 'drop-shadow(0 0 10px rgba(0, 191, 255, 0.3))'
+            }}>
+              💬
+            </div>
+            
+            <h3 style={{
+              color: '#ffffff',
+              fontSize: '18px',
+              fontWeight: '700',
+              marginBottom: '8px',
+              lineHeight: '1.4'
+            }}>
+              Precisa de Ajuda?
+            </h3>
+            
+            <p style={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: '14px',
+              lineHeight: '1.6',
+              marginBottom: '20px',
+              maxWidth: '400px',
+              margin: '0 auto 20px'
+            }}>
+              Encontrou algum erro? Tem uma sugestão incrível? Fale com nosso suporte pelo Instagram!
+            </p>
+            
+            <a 
+              href="https://www.instagram.com/direct/t/17845169685678138" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn btn-secondary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '14px 28px',
+                fontSize: '15px',
+                fontWeight: '700',
+                textDecoration: 'none',
+                background: 'linear-gradient(135deg, rgba(0, 191, 255, 0.15) 0%, rgba(0, 128, 255, 0.15) 100%)',
+                border: '2px solid rgba(0, 191, 255, 0.4)',
+                color: '#00bfff',
+                borderRadius: '12px',
+                transition: 'all 0.3s ease',
+                minHeight: '48px',
+                width: 'auto',
+                maxWidth: '100%'
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 191, 255, 0.25) 0%, rgba(0, 128, 255, 0.25) 100%)'
+                e.currentTarget.style.borderColor = '#00bfff'
+                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 191, 255, 0.3)'
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 191, 255, 0.15) 0%, rgba(0, 128, 255, 0.15) 100%)'
+                e.currentTarget.style.borderColor = 'rgba(0, 191, 255, 0.4)'
+                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = 'none'
+              }}
+            >
+              <span style={{ fontSize: '20px' }}>📱</span>
+              <span>Falar com Suporte</span>
+            </a>
+          </div>
+          
+          <p style={{
+            color: 'rgba(255, 255, 255, 0.4)',
+            fontSize: '12px',
+            fontWeight: '500',
+            letterSpacing: '0.5px'
+          }}>
+            Resposta em até 24h • Suporte em Português 🇧🇷
+          </p>
         </div>
       </div>
     </div>
