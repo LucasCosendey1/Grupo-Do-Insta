@@ -626,6 +626,7 @@ interface ProfilesArenaProps {
   isUserMember: boolean
 }
 
+// State armazena {x, y, size} para colisões precisas
 function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername }: ProfilesArenaProps) {
   const [positions, setPositions] = useState<Record<string, { x: number; y: number; size: number }>>({})
 
@@ -659,7 +660,7 @@ function ProfilesArena({ profiles, onImageError, onProfileClick, creatorUsername
 }
 
 // ==========================================
-// MOVING PROFILE - CORRIGIDO (Build Fix)
+// MOVING PROFILE - CORRIGIDO E ROBUSTO
 // ==========================================
 
 interface MovingProfileProps {
@@ -685,20 +686,25 @@ function MovingProfile({
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [tooltipPosition, setTooltipPosition] = useState({ vertical: 'top', horizontal: 'center' })
   
+  // Velocidade em linha reta (direção normalizada)
   const velocityRef = useRef({ x: 0, y: 0 })
-  const collisionCooldowns = useRef<Record<string, number>>({})
-  const COLLISION_COOLDOWN = 1000 
   
+  // Cooldowns individuais para cada colisão
+  const collisionCooldowns = useRef<Record<string, number>>({})
+  const COLLISION_COOLDOWN = 1000 // 1 segundo para colisões entre bolinhas
+  
+  // Cooldown específico para colisões com a parede
   const lastWallCollisionTime = useRef(0)
-  const WALL_COLLISION_COOLDOWN = 200
+  const WALL_COLLISION_COOLDOWN = 200 // 0.2 segundos para colisões com parede
   
   const isInitializedRef = useRef(false)
   const BOUNDARY_PADDING = 5
 
   // ==========================================
-  // CÁLCULOS AUXILIARES (Estáticos ou puros)
+  // CÁLCULOS AUXILIARES
   // ==========================================
 
+  // Define tamanho da bolinha com base nos seguidores (Logarítmico)
   const calculateImageSize = (followers: number): number => {
     const MIN_SIZE = 45
     const MAX_SIZE = 100
@@ -713,6 +719,7 @@ function MovingProfile({
 
   const imageSize = calculateImageSize(profile.followers)
 
+  // Verifica se duas bolinhas estão colidindo (Soma dos raios)
   const checkCollision = (
     pos1: { x: number; y: number }, 
     pos2: { x: number; y: number }, 
@@ -725,11 +732,89 @@ function MovingProfile({
     
     const radius1 = size1 / 2
     const radius2 = size2 / 2
+    // +5px de margem para evitar overlap visual
     return distance < (radius1 + radius2) + 5
   }
 
+  // Encontra a melhor direção livre para "fugir" de aglomerações
+  const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
+    const arena = containerRef.current?.parentElement
+    if (!arena) return { x: 1, y: 0 }
+
+    const arenaWidth = arena.offsetWidth
+    const arenaHeight = arena.offsetHeight
+    const NUM_DIRECTIONS = 16 // Testa 16 direções radiais
+
+    let bestDirection = { x: 0, y: 0 }
+    let maxMinDistance = 0
+
+    for (let i = 0; i < NUM_DIRECTIONS; i++) {
+      const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
+      const testDirection = {
+        x: Math.cos(angle),
+        y: Math.sin(angle)
+      }
+
+      let minDistanceInDirection = Infinity
+
+      // 1. Distância até Paredes nesta direção
+      if (testDirection.x > 0) {
+         const dist = (arenaWidth - currentPos.x - imageSize) / testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.x < 0) {
+         const dist = (currentPos.x - BOUNDARY_PADDING) / -testDirection.x
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y > 0) {
+         const dist = (arenaHeight - currentPos.y - imageSize) / testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+      if (testDirection.y < 0) {
+         const dist = (currentPos.y - BOUNDARY_PADDING) / -testDirection.y
+         minDistanceInDirection = Math.min(minDistanceInDirection, dist)
+      }
+
+      // 2. Distância até Outras Bolinhas nesta direção
+      Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
+        if (username === profile.username || !otherPos) return
+
+        const dx = otherPos.x - currentPos.x
+        const dy = otherPos.y - currentPos.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        // Vetor normalizado apontando para a outra bolinha
+        const directionToOther = { x: dx / distance, y: dy / distance }
+        // Produto escalar para saber se a outra bolinha está na direção que estamos testando
+        const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
+
+        // Se estiver num cone de visão à frente (> 0.3), considera a distância
+        if (dotProduct > 0.3) {
+          minDistanceInDirection = Math.min(minDistanceInDirection, distance)
+        }
+      })
+
+      // Escolhe a direção que tem o maior espaço livre
+      if (minDistanceInDirection > maxMinDistance) {
+        maxMinDistance = minDistanceInDirection
+        bestDirection = testDirection
+      }
+    }
+
+    // Se estiver tudo bloqueado, escolhe aleatório
+    if (maxMinDistance === 0) {
+      const randomAngle = Math.random() * Math.PI * 2
+      bestDirection = {
+        x: Math.cos(randomAngle),
+        y: Math.sin(randomAngle)
+      }
+    }
+
+    return bestDirection
+  }
+
   // ==========================================
-  // INICIALIZAÇÃO E ANIMAÇÃO
+  // INICIALIZAÇÃO
   // ==========================================
   useEffect(() => {
     if (!containerRef.current) return
@@ -738,52 +823,9 @@ function MovingProfile({
     const arenaWidth = arena.offsetWidth
     const arenaHeight = arena.offsetHeight
 
-    // ✅ CORREÇÃO 1: Função movida para dentro do useEffect para evitar erro de dependência
-    const findBestDirection = (currentPos: { x: number; y: number }): { x: number; y: number } => {
-      const NUM_DIRECTIONS = 16
-      let bestDirection = { x: 0, y: 0 }
-      let maxMinDistance = 0
-  
-      for (let i = 0; i < NUM_DIRECTIONS; i++) {
-        const angle = (i * 2 * Math.PI) / NUM_DIRECTIONS
-        const testDirection = { x: Math.cos(angle), y: Math.sin(angle) }
-        let minDistanceInDirection = Infinity
-  
-        // Paredes
-        if (testDirection.x > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaWidth - currentPos.x - imageSize) / testDirection.x)
-        if (testDirection.x < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.x - BOUNDARY_PADDING) / -testDirection.x)
-        if (testDirection.y > 0) minDistanceInDirection = Math.min(minDistanceInDirection, (arenaHeight - currentPos.y - imageSize) / testDirection.y)
-        if (testDirection.y < 0) minDistanceInDirection = Math.min(minDistanceInDirection, (currentPos.y - BOUNDARY_PADDING) / -testDirection.y)
-  
-        // Outras Bolinhas
-        Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
-          if (username === profile.username || !otherPos) return
-          const dx = otherPos.x - currentPos.x
-          const dy = otherPos.y - currentPos.y
-          const distance = Math.sqrt(dx * dx + dy * dy)
-          const directionToOther = { x: dx / distance, y: dy / distance }
-          const dotProduct = testDirection.x * directionToOther.x + testDirection.y * directionToOther.y
-          if (dotProduct > 0.3) minDistanceInDirection = Math.min(minDistanceInDirection, distance)
-        })
-  
-        if (minDistanceInDirection > maxMinDistance) {
-          maxMinDistance = minDistanceInDirection
-          bestDirection = testDirection
-        }
-      }
-  
-      if (maxMinDistance === 0) {
-        const randomAngle = Math.random() * Math.PI * 2
-        bestDirection = { x: Math.cos(randomAngle), y: Math.sin(randomAngle) }
-      }
-      return bestDirection
-    }
-
     if (!isInitializedRef.current) {
-      // ✅ CORREÇÃO 2: Inicialização explícita de variáveis numéricas
-      let initialX = 0;
-      let initialY = 0;
-      let attempts = 0;
+      // Tenta encontrar uma posição inicial livre de colisão
+      let initialX, initialY, attempts = 0
       
       do {
         initialX = BOUNDARY_PADDING + Math.random() * (arenaWidth - imageSize - BOUNDARY_PADDING * 2)
@@ -798,12 +840,22 @@ function MovingProfile({
 
       setPosition({ x: initialX, y: initialY })
       updatePosition(profile.username, { x: initialX, y: initialY }, imageSize)
-      const baseSpeed = profile.isVerified ? 0.8 : 0.6
+
+      // Define velocidade inicial
+      const baseSpeed = profile.isVerified ? 0.8 : 0.6 // Verificados são mais rápidos
       const direction = findBestDirection({ x: initialX, y: initialY })
-      velocityRef.current = { x: direction.x * baseSpeed, y: direction.y * baseSpeed }
+      
+      velocityRef.current = {
+        x: direction.x * baseSpeed,
+        y: direction.y * baseSpeed
+      }
+
       isInitializedRef.current = true
     }
 
+    // ==========================================
+    // LOOP DE ANIMAÇÃO
+    // ==========================================
     const animate = () => {
       if (isHovered) {
         animationRef.current = requestAnimationFrame(animate)
@@ -811,46 +863,57 @@ function MovingProfile({
       }
 
       setPosition(prev => {
+        // 1️⃣ MOVIMENTO LINEAR
         let newX = prev.x + velocityRef.current.x
         let newY = prev.y + velocityRef.current.y
+
         let needsNewDirection = false
         const currentTime = Date.now()
 
-        // Paredes com Cooldown
+        // 2️⃣ COLISÃO COM PAREDES (COM COOLDOWN)
         const timeSinceWallCollision = currentTime - lastWallCollisionTime.current
         const canCheckWallCollision = timeSinceWallCollision > WALL_COLLISION_COOLDOWN
 
         if (canCheckWallCollision) {
-            let hitWall = false
-            if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
-                newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
-                hitWall = true
-                needsNewDirection = true
-            }
-            if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
-                newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
-                hitWall = true
-                needsNewDirection = true
-            }
-            if (hitWall) lastWallCollisionTime.current = currentTime
-        } else {
+          let hitWall = false
+          // Parede Esquerda/Direita
+          if (newX <= BOUNDARY_PADDING || newX >= arenaWidth - imageSize - BOUNDARY_PADDING) {
             newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          // Parede Cima/Baixo
+          if (newY <= BOUNDARY_PADDING || newY >= arenaHeight - imageSize - BOUNDARY_PADDING) {
             newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
+            hitWall = true
+            needsNewDirection = true
+          }
+          
+          if (hitWall) {
+            lastWallCollisionTime.current = currentTime
+          }
+        } else {
+          // Em cooldown: Apenas mantém dentro, sem disparar mudança de direção
+          newX = Math.max(BOUNDARY_PADDING, Math.min(newX, arenaWidth - imageSize - BOUNDARY_PADDING))
+          newY = Math.max(BOUNDARY_PADDING, Math.min(newY, arenaHeight - imageSize - BOUNDARY_PADDING))
         }
 
         const newPos = { x: newX, y: newY }
 
-        // Colisões com Cooldown Individual
+        // 3️⃣ COLISÃO COM OUTRAS BOLINHAS (COM COOLDOWN INDIVIDUAL)
         if (!needsNewDirection) {
           Object.entries(allPositions || {}).forEach(([username, otherPos]) => {
             if (username === profile.username || !otherPos) return
 
+            // Pega o cooldown específico para esta bolinha
             const lastCollision = collisionCooldowns.current[username] || 0
             const canCollideWithThisBall = (currentTime - lastCollision) > COLLISION_COOLDOWN
+
+            // Pega o tamanho real da outra bolinha
             const otherSize = otherPos.size || imageSize
 
             if (checkCollision(newPos, otherPos, imageSize, otherSize)) {
-              // Empurra
+              // EMPURRÃO FÍSICO (Sempre acontece para evitar sobreposição visual)
               const dx = newPos.x - otherPos.x
               const dy = newPos.y - otherPos.y
               const distance = Math.sqrt(dx * dx + dy * dy)
@@ -858,30 +921,37 @@ function MovingProfile({
               if (distance > 0) {
                 const radius1 = imageSize / 2
                 const radius2 = otherSize / 2
+                // Quanto elas estão sobrepostas?
                 const overlap = (radius1 + radius2) - distance
 
                 if (overlap > 0) {
-                    const pushDistance = overlap / 2 + 2
+                    const pushDistance = overlap / 2 + 2 // Empurra metade da sobreposição + margem
                     newPos.x += (dx / distance) * pushDistance
                     newPos.y += (dy / distance) * pushDistance
                 }
               }
 
-              // Muda direção
+              // MUDANÇA DE DIREÇÃO (Só acontece se o cooldown permitir)
               if (canCollideWithThisBall) {
-                needsNewDirection = true
-                collisionCooldowns.current[username] = currentTime
+                  needsNewDirection = true
+                  collisionCooldowns.current[username] = currentTime // Marca cooldown para essa bolinha
               }
             }
           })
         }
 
+        // 4️⃣ RECALCULA DIREÇÃO (se necessário)
         if (needsNewDirection) {
           const baseSpeed = profile.isVerified ? 0.8 : 0.6
           const bestDirection = findBestDirection(newPos)
-          velocityRef.current = { x: bestDirection.x * baseSpeed, y: bestDirection.y * baseSpeed }
+
+          velocityRef.current = {
+            x: bestDirection.x * baseSpeed,
+            y: bestDirection.y * baseSpeed
+          }
         }
 
+        // Atualiza posição global para que outras bolinhas saibam onde estou
         updatePosition(profile.username, newPos, imageSize)
         return newPos
       })
@@ -894,7 +964,7 @@ function MovingProfile({
   }, [isHovered, allPositions, profile.username, updatePosition, imageSize, profile.isVerified])
 
   // ==========================================
-  // TOOLTIP E RENDER
+  // TOOLTIP INTELIGENTE (mantido igual)
   // ==========================================
   useEffect(() => {
     if (!isHovered || !containerRef.current) return
@@ -903,21 +973,24 @@ function MovingProfile({
     const arenaWidth = arena.offsetWidth
     const tooltipHeight = 80
     const tooltipWidth = 150
+
     let vertical = 'top'
     let horizontal = 'center'
+
     if (position.y < tooltipHeight) vertical = 'bottom'
     if (position.x < tooltipWidth / 2) horizontal = 'left'
     else if (position.x > arenaWidth - imageSize - tooltipWidth / 2) horizontal = 'right'
+
     setTooltipPosition({ vertical, horizontal })
   }, [isHovered, position, imageSize])
 
-  const formatNumber = (num: number) => {
+  const formatNumber = (num: number): string => {
     if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
     if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
     return num.toString()
   }
 
-  const getTooltipClass = () => {
+  const getTooltipClass = (): string => {
     const classes = ['profile-info']
     if (tooltipPosition.vertical === 'bottom') classes.push('profile-info-bottom')
     if (tooltipPosition.horizontal === 'left') classes.push('profile-info-left')
@@ -925,6 +998,9 @@ function MovingProfile({
     return classes.join(' ')
   }
 
+  // ==========================================
+  // RENDER
+  // ==========================================
   return (
     <div 
       ref={containerRef} 
@@ -936,14 +1012,28 @@ function MovingProfile({
         height: `${imageSize}px`, 
         position: 'absolute', 
         touchAction: 'none',
-        transition: 'none'
+        transition: 'none' // Remove transições CSS para movimento fluido
       }} 
       onMouseEnter={() => setIsHovered(true)} 
       onMouseLeave={() => setIsHovered(false)}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setTimeout(() => setIsHovered(false), 2000)}
     >
-      {isAdmin && <div className="admin-crown" style={{position: 'absolute', top: '-5px', right: '-5px', fontSize: `${imageSize * 0.25}px`, zIndex: 10}}>👑</div>}
+      {isAdmin && (
+        <div 
+          className="admin-crown" 
+          style={{
+            position: 'absolute', 
+            top: '-5px', 
+            right: '-5px', 
+            fontSize: `${imageSize * 0.25}px`, 
+            zIndex: 10
+          }}
+        >
+          👑
+        </div>
+      )}
+
       {isHovered && (
         <div className={getTooltipClass()} style={{zIndex: 999, pointerEvents: 'none'}}>
           <div className="profile-username" style={{fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px'}}>
@@ -952,6 +1042,7 @@ function MovingProfile({
           <div className="profile-followers" style={{fontSize: '12px'}}>{formatNumber(profile.followers)} seguidores</div>
         </div>
       )}
+
       <img 
         src={profile.profilePic} 
         alt={profile.username} 
@@ -973,8 +1064,6 @@ function MovingProfile({
     </div>
   )
 }
-
-
 
 interface ProfileModalProps {
   profile: Profile
