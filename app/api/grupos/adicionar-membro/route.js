@@ -1,3 +1,5 @@
+// app\api\grupos\adicionar-membro\route.js
+
 import { sql } from '@vercel/postgres'
 
 export async function POST(request) {
@@ -36,38 +38,34 @@ export async function POST(request) {
     
     if (!fullProfileData || !fullProfileData.profilePic) {
       console.log('')
-      console.log('🔍 profileData incompleto, buscando via API...')
-      
-      // ✅ CORREÇÃO: Detectar URL base corretamente no Vercel
+      console.log('🔍 profileData incompleto, buscando via nova API...')
+
       const getBaseUrl = () => {
         const host = request.headers.get('host')
         const protocol = request.headers.get('x-forwarded-proto') || 'http'
-        
-        if (host) {
-          console.log('📍 Usando host da requisição:', host)
-          return `${protocol}://${host}`
-        }
-        
-        if (process.env.VERCEL_URL) {
-          console.log('📍 Usando VERCEL_URL:', process.env.VERCEL_URL)
-          return `https://${process.env.VERCEL_URL}`
-        }
-        
-        console.log('📍 Usando localhost (desenvolvimento)')
+        if (host) return `${protocol}://${host}`
+        if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`
         return 'http://localhost:3000'
       }
-      
+
       const baseUrl = getBaseUrl()
-      console.log('🌐 Base URL final:', baseUrl)
-      
-      const scrapeResponse = await fetch(`${baseUrl}/api/scrape?username=${username}`)
-      
-      if (scrapeResponse.ok) {
-        fullProfileData = await scrapeResponse.json()
-        console.log('✅ Dados obtidos da API scrape')
-      } else {
-        console.warn('⚠️ Scrape falhou, usando dados básicos')
-        console.warn('   Status:', scrapeResponse.status)
+
+      try {
+        const apiResponse = await fetch(`${baseUrl}/api/instagram/perfil?username=${username}`)
+
+        if (apiResponse.ok) {
+          const apiData = await apiResponse.json()
+          if (apiData.success && apiData.profile) {
+            fullProfileData = apiData.profile
+            console.log('✅ Dados obtidos da nova API')
+          } else {
+            throw new Error('Perfil não encontrado')
+          }
+        } else {
+          throw new Error(`API retornou ${apiResponse.status}`)
+        }
+      } catch (apiError) {
+        console.warn('⚠️ API falhou, usando dados básicos:', apiError.message)
         fullProfileData = {
           username: username,
           fullName: username,

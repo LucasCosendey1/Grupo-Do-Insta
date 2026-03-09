@@ -1,3 +1,5 @@
+//grupo\[id]\page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -88,7 +90,7 @@ export default function GrupoPage() {
   useEffect(() => {
     setIsMounted(true)
     if (typeof window !== 'undefined') {
-      const savedProfile = localStorage.getItem('userProfile')
+      const savedProfile = sessionStorage.getItem('userProfile')
       if (savedProfile) {
         try {
           setUserProfile(JSON.parse(savedProfile))
@@ -166,11 +168,15 @@ export default function GrupoPage() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
-        const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
+        const response = await fetch(`/api/instagram/perfil?username=${encodeURIComponent(cleanUsername)}`)
         
         if (response.ok) {
           const data = await response.json()
-          setSearchResults([data]) 
+          if (data.success && data.profile) {
+            setSearchResults([data.profile])
+          } else {
+            setSearchResults([])
+          }
         } else {
           setSearchResults([])
         }
@@ -198,17 +204,17 @@ export default function GrupoPage() {
         followers: profileData.followers,
         isVerified: profileData.isVerified
     }
-    localStorage.setItem('userProfile', JSON.stringify(userToSave))
+    sessionStorage.setItem('userProfile', JSON.stringify(userToSave))
     setUserProfile(userToSave)
     setSearchTerm('')
     setSearchResults([])
 
     setIsJoining(true)
     try {
-        fetch('/api/usuarios/sincronizar', {
+        fetch('/api/instagram/perfil', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(profileData)
+            body: JSON.stringify({ username: profileData.username, profile: profileData })
         })
 
         const res = await fetch('/api/grupos/adicionar-membro', {
@@ -550,7 +556,7 @@ export default function GrupoPage() {
                 className="btn-link" 
                 style={{display:'block', margin:'10px auto', background:'none', border:'none', color:'#666', cursor:'pointer', fontSize:12}}
                 onClick={() => {
-                    localStorage.removeItem('userProfile')
+                    sessionStorage.removeItem('userProfile')
                     setUserProfile(null)
                 }}
              >

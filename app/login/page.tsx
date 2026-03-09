@@ -3,6 +3,7 @@
 
 'use client'
 
+import { Suspense } from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -21,7 +22,7 @@ interface ProfileSearchResult {
   isVerified: boolean
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   
@@ -52,44 +53,40 @@ export default function LoginPage() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
+        const response = await fetch(`/api/instagram/perfil?username=${encodeURIComponent(cleanUsername)}`)
         
-        console.log('🔍 Buscando perfil usando IP do usuário...')
-        
-        // ✅ USA O IP DO USUÁRIO PARA FAZER A BUSCA!
-        const profile = await searchInstagramProfileCached(cleanUsername)
-        
-        if (profile) {
-          console.log('✅ Perfil encontrado:', profile.username)
-          
-          // Processar foto para usar proxy se necessário
-          let profilePic = profile.profilePic
-          
-          if (profilePic && !profilePic.includes('ui-avatars.com') && !profilePic.startsWith('/api/')) {
-            // Usar proxy para imagens do Instagram
-            profilePic = `/api/image-proxy?url=${encodeURIComponent(profilePic)}&username=${profile.username}`
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.profile) {
+            const profiles: ProfileSearchResult[] = [{
+              username: data.profile.username,
+              fullName: data.profile.fullName || data.profile.username,
+              profilePic: data.profile.profilePic,
+              followers: data.profile.followers || 0,
+              following: data.profile.following || 0,
+              posts: data.profile.posts || 0,
+              biography: data.profile.biography || '',
+              isPrivate: data.profile.isPrivate || false,
+              isVerified: data.profile.isVerified || false
+            }]
+            setSearchResults(profiles)
+            setShowResults(true)
+          } else {
+            setSearchResults([])
+            setShowResults(false)
           }
-          
-          const processedProfile: ProfileSearchResult = {
-            ...profile,
-            profilePic: profilePic || `https://ui-avatars.com/api/?name=${profile.username}&size=200&background=00bfff&color=fff`
-          }
-          
-          setSearchResults([processedProfile])
-          setShowResults(true)
         } else {
-          console.log('❌ Perfil não encontrado')
           setSearchResults([])
           setShowResults(false)
         }
-        
       } catch (error) {
-        console.error('❌ Erro ao buscar perfil:', error)
+        console.error('Erro ao buscar perfis:', error)
         setSearchResults([])
         setShowResults(false)
       } finally {
         setIsSearching(false)
       }
-    }, 800) // 800ms de delay para evitar muitas requisições
+    }, 2000)
 
     return () => {
       if (searchTimeoutRef.current) {
@@ -127,43 +124,33 @@ export default function LoginPage() {
       console.log('🔄 Sincronizando dados com o banco...')
       
       // Sincronizar com banco de dados
-      const syncResponse = await fetch('/api/usuarios/sincronizar', {
+      const syncResponse = await fetch('/api/instagram/perfil', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: selectedProfile.username,
-          fullName: selectedProfile.fullName,
-          profilePic: selectedProfile.profilePic,
-          followers: selectedProfile.followers,
-          following: selectedProfile.following,
-          posts: selectedProfile.posts,
-          biography: selectedProfile.biography,
-          isVerified: selectedProfile.isVerified,
-          isPrivate: selectedProfile.isPrivate,
-          instagramId: selectedProfile.username
+          profile: selectedProfile
         })
       })
 
       if (!syncResponse.ok) {
-        console.warn('⚠️ Falha na sincronização, mas continuando...')
+        console.error('⚠️ Falha na sincronização, mas continuando...')
       } else {
         console.log('✅ Dados sincronizados com sucesso!')
-      }
+      }                 // ← fecha o if
       
-    } catch (error) {
-      console.error('❌ Erro ao sincronizar:', error)
-    }
+    } catch (error) {   // ← fecha o try
     
     // Salvar no localStorage
-    localStorage.setItem('userProfile', JSON.stringify(selectedProfile))
+    sessionStorage.setItem('userProfile', JSON.stringify(selectedProfile))
     
     setIsSyncing(false)
     
     // Redirecionamento inteligente
-    const redirectUrl = localStorage.getItem('redirectAfterLogin')
+    const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
     
     if (redirectUrl) {
-      localStorage.removeItem('redirectAfterLogin')
+      sessionStorage.removeItem('redirectAfterLogin')
       router.push(redirectUrl)
     } else {
       router.push('/')
@@ -292,5 +279,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Carregando...</div>}>
+      <LoginPageContent />
+    </Suspense>
   )
 }

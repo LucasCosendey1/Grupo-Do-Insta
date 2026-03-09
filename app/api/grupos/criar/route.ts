@@ -39,25 +39,43 @@ export async function POST(request: NextRequest) {
     console.log('   - Seguidores:', creatorData.followers)
     console.log('')
 
-    // 🔥 SINCRONIZAR COM O BANCO (OPCIONAL MAS RECOMENDADO)
+
+    // 💾 SINCRONIZAR CRIADOR DIRETAMENTE NO BANCO
     try {
       console.log('💾 Sincronizando criador com o banco...')
-      await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/usuarios/sincronizar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: creatorData.username,
-          fullName: creatorData.fullName,
-          profilePic: creatorData.profilePic,
-          followers: creatorData.followers,
-          following: creatorData.following || 0,
-          posts: creatorData.posts || 0,
-          biography: creatorData.biography || '',
-          isVerified: creatorData.isVerified || false,
-          isPrivate: creatorData.isPrivate || false,
-          instagramId: creatorData.username
-        })
-      })
+      await sql`
+        INSERT INTO usuarios (
+          username, full_name, profile_pic, biography,
+          followers, following, posts,
+          is_private, is_verified, instagram_id,
+          migrated_pic, last_login
+        ) VALUES (
+          ${creatorData.username},
+          ${creatorData.fullName || creatorData.username},
+          ${creatorData.profilePic || ''},
+          ${creatorData.biography || ''},
+          ${creatorData.followers || 0},
+          ${creatorData.following || 0},
+          ${creatorData.posts || 0},
+          ${creatorData.isPrivate || false},
+          ${creatorData.isVerified || false},
+          ${creatorData.username},
+          ${(creatorData.profilePic || '').startsWith('data:image/') ? true : false},
+          NOW()
+        )
+        ON CONFLICT (username)
+        DO UPDATE SET
+          full_name    = EXCLUDED.full_name,
+          profile_pic  = EXCLUDED.profile_pic,
+          biography    = EXCLUDED.biography,
+          followers    = EXCLUDED.followers,
+          following    = EXCLUDED.following,
+          posts        = EXCLUDED.posts,
+          is_private   = EXCLUDED.is_private,
+          is_verified  = EXCLUDED.is_verified,
+          migrated_pic = EXCLUDED.migrated_pic,
+          last_login   = NOW()
+      `
       console.log('✅ Criador sincronizado no banco!')
     } catch (syncError) {
       console.warn('⚠️ Falha ao sincronizar criador (continuando mesmo assim):', syncError)

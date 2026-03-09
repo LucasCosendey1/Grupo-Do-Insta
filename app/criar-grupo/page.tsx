@@ -1,3 +1,5 @@
+//app/criar-grupo/page.tsx
+
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -54,7 +56,7 @@ export default function CriarGrupoPage() {
 
   // 1. Carregar perfil salvo
   useEffect(() => {
-    const savedProfile = localStorage.getItem('userProfile')
+    const savedProfile = sessionStorage.getItem('userProfile')
     if (savedProfile) {
       try {
         const profile = JSON.parse(savedProfile)
@@ -81,24 +83,29 @@ export default function CriarGrupoPage() {
     searchTimeoutRef.current = setTimeout(async () => {
       try {
         const cleanUsername = searchTerm.replace('@', '').trim().toLowerCase()
-        const response = await fetch(`/api/scrape?username=${encodeURIComponent(cleanUsername)}`)
+        const response = await fetch(`/api/instagram/perfil?username=${encodeURIComponent(cleanUsername)}`)
         
         if (response.ok) {
           const data = await response.json()
-          const profiles: ProfileSearchResult[] = [{
-            username: data.username,
-            fullName: data.fullName || data.username,
-            profilePic: data.profilePic,
-            followers: data.followers || 0,
-            isVerified: data.isVerified || false,
-            isPrivate: data.isPrivate || false,
-            following: data.following || 0,
-            posts: data.posts || 0,
-            biography: data.biography || ''
-          }]
-          setSearchResults(profiles)
-          setShowResults(true)
-          setUsernameError('')
+          if (data.success && data.profile) {
+            const profiles: ProfileSearchResult[] = [{
+              username: data.profile.username,
+              fullName: data.profile.fullName || data.profile.username,
+              profilePic: data.profile.profilePic,
+              followers: data.profile.followers || 0,
+              isVerified: data.profile.isVerified || false,
+              isPrivate: data.profile.isPrivate || false,
+              following: data.profile.following || 0,
+              posts: data.profile.posts || 0,
+              biography: data.profile.biography || ''
+            }]
+            setSearchResults(profiles)
+            setShowResults(true)
+            setUsernameError('')
+          } else {
+            setSearchResults([])
+            setShowResults(false)
+          }
         } else {
           setSearchResults([])
           setShowResults(false)
@@ -136,7 +143,7 @@ export default function CriarGrupoPage() {
       isVerified: profile.isVerified
     }
     setUserProfile(simplified)
-    localStorage.setItem('userProfile', JSON.stringify(simplified))
+    sessionStorage.setItem('userProfile', JSON.stringify(simplified))
     setSearchTerm('')
     setShowResults(false)
   }

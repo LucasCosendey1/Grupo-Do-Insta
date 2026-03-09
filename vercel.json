@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/atualizar-usuarios",
-      "schedule": "0 6 * * *"
-    }
-  ]
-}

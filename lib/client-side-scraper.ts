@@ -158,7 +158,7 @@ function extractFromHTML(html: string, username: string): InstagramProfile {
   
   try {
     // Buscar JSON embutido
-    const scriptMatches = html.match(/<script type="application\/json"[^>]*>({.*?})<\/script>/gs)
+    const scriptMatches = html.match(/<script type="application\/json"[^>]*>({[\s\S]*?})<\/script>/g)
     
     if (scriptMatches) {
       for (const match of scriptMatches) {
