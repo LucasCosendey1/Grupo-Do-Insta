@@ -68,40 +68,37 @@ export async function GET(request: NextRequest) {
   // ── Sondas cruas: status HTTP + início do corpo de cada fonte ───────────────
   const UA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+  const buscaHeaders = { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' }
+  const q = `site%3Ainstagram.com+%22${username}%22`
   const sondas: { nome: string; url: string; headers?: Record<string, string> }[] = [
+    // Motores de busca
+    { nome: 'yahoo', url: `https://search.yahoo.com/search?p=${q}`, headers: buscaHeaders },
+    { nome: 'ecosia', url: `https://www.ecosia.org/search?q=${q}`, headers: buscaHeaders },
+    { nome: 'mojeek', url: `https://www.mojeek.com/search?q=${q}`, headers: buscaHeaders },
+    { nome: 'brave', url: `https://search.brave.com/search?q=${q}`, headers: buscaHeaders },
     {
-      nome: 'instagram_web_profile_info',
-      url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      headers: { 'x-ig-app-id': '936619743392459', 'User-Agent': UA },
+      nome: 'qwant_api',
+      url: `https://api.qwant.com/v3/search/web?q=${q}&count=10&locale=en_US&offset=0&device=desktop`,
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
     },
     {
-      nome: 'storiesig',
-      url: `https://api-ig.storiesig.info/api/user?username=${username}`,
-      headers: { 'User-Agent': UA, Origin: 'https://storiesig.info', Referer: 'https://storiesig.info/' },
+      nome: 'bing_com_cookie',
+      url: `https://www.bing.com/search?q=${q}`,
+      headers: {
+        ...buscaHeaders,
+        Cookie: 'SRCHHPGUSR=SRCHLANG=en&ADLT=DEMOTE; _EDGE_CD=m=en-us&u=en-us; _EDGE_S=mkt=en-us',
+      },
     },
-    { nome: 'mixerno', url: `https://mixerno.space/api/instagram-user/user/${username}` },
+    // Espelhos do Instagram
+    { nome: 'picuki', url: `https://www.picuki.com/profile/${username}`, headers: buscaHeaders },
+    { nome: 'greatfon', url: `https://greatfon.com/v/${username}`, headers: buscaHeaders },
+    { nome: 'imginn', url: `https://imginn.com/${username}/`, headers: buscaHeaders },
+    // APIs de estatísticas
     {
-      nome: 'livecounts',
-      url: `https://api.livecounts.io/instagram-live-follower-counter/stats/${username}`,
-      headers: { 'User-Agent': UA, Origin: 'https://livecounts.io', Referer: 'https://livecounts.io/' },
+      nome: 'instrack',
+      url: `https://api.instrack.app/api/account/${username}`,
+      headers: { 'User-Agent': UA, Accept: 'application/json', Referer: 'https://instrack.app/' },
     },
-    {
-      nome: 'duckduckgo',
-      url: `https://html.duckduckgo.com/html/?q=site%3Ainstagram.com+%22${username}%22`,
-      headers: { 'User-Agent': UA, Accept: 'text/html' },
-    },
-    {
-      nome: 'bing',
-      url: `https://www.bing.com/search?q=site%3Ainstagram.com+%22${username}%22`,
-      headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
-    },
-    { nome: 'socialcounts', url: `https://api.socialcounts.org/instagram-live-follower-count/${username}` },
-    {
-      nome: 'searx',
-      url: `https://searx.be/search?q=site%3Ainstagram.com+%22${username}%22&format=json`,
-      headers: { 'User-Agent': UA },
-    },
-    { nome: 'unavatar', url: `https://unavatar.io/instagram/${username}?fallback=false` },
   ]
 
   const probes = []
@@ -116,12 +113,38 @@ export async function GET(request: NextRequest) {
       })
       const ct = res.headers.get('content-type') || ''
       let corpo = ''
+      let temFollowers = false
+      let temUsername = false
+      let excertoFollowers: string | null = null
       try {
-        corpo = ct.startsWith('image/')
-          ? `(imagem, ${(await res.arrayBuffer()).byteLength} bytes)`
-          : (await res.text()).substring(0, 250).replace(/\s+/g, ' ')
+        if (ct.startsWith('image/')) {
+          corpo = `(imagem, ${(await res.arrayBuffer()).byteLength} bytes)`
+        } else {
+          const texto = await res.text()
+          corpo = texto.substring(0, 200).replace(/\s+/g, ' ')
+          const lower = texto.toLowerCase()
+          temUsername = lower.includes(username)
+          const iF = lower.indexOf('followers') !== -1 ? lower.indexOf('followers') : lower.indexOf('seguidores')
+          temFollowers = iF !== -1
+          if (iF !== -1) {
+            excertoFollowers = texto
+              .substring(Math.max(0, iF - 350), iF + 250)
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+          }
+        }
       } catch {}
-      probes.push({ fonte: s.nome, status: res.status, contentType: ct, ms: Date.now() - inicio, corpo })
+      probes.push({
+        fonte: s.nome,
+        status: res.status,
+        contentType: ct,
+        ms: Date.now() - inicio,
+        temUsername,
+        temFollowers,
+        excertoFollowers,
+        corpo,
+      })
     } catch (e) {
       probes.push({
         fonte: s.nome,
@@ -132,43 +155,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // ── Análise detalhada do HTML do Bing ───────────────────────────────────────
-  let bingAnalise: Record<string, unknown> = {}
-  try {
-    const res = await fetch(
-      `https://www.bing.com/search?q=site%3Ainstagram.com+%22${username}%22`,
-      {
-        headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
-        cache: 'no-store',
-        signal: AbortSignal.timeout(8000),
-      }
-    )
-    const html = await res.text()
-    const lower = html.toLowerCase()
-    const idxLink = lower.indexOf(`instagram.com/${username}`)
-    const idxFollowers = lower.indexOf('followers')
-    const limpar = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-    bingAnalise = {
-      status: res.status,
-      tamanhoHTML: html.length,
-      temLinkPerfil: idxLink !== -1,
-      temFollowers: idxFollowers !== -1,
-      excertoLink:
-        idxLink !== -1 ? limpar(html.substring(Math.max(0, idxLink - 300), idxLink + 800)) : null,
-      excertoFollowers:
-        idxFollowers !== -1
-          ? limpar(html.substring(Math.max(0, idxFollowers - 400), idxFollowers + 400))
-          : null,
-    }
-  } catch (e) {
-    bingAnalise = { erro: e instanceof Error ? e.message : String(e) }
-  }
-
   return NextResponse.json({
     username,
     ambiente: process.env.VERCEL ? 'vercel' : 'local',
     resultados,
-    bingAnalise,
     probes,
   })
 }
