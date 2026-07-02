@@ -248,7 +248,7 @@ async function viaLivecounts(username: string): Promise<InstagramProfile | null>
 async function viaBing(username: string): Promise<InstagramProfile | null> {
   const q = encodeURIComponent(`site:instagram.com "${username}"`)
   const res = await fetchComTimeout(
-    `https://www.bing.com/search?q=${q}&mkt=en-US&setlang=en-US&count=10`,
+    `https://www.bing.com/search?q=${q}`,
     {
       headers: {
         'User-Agent':

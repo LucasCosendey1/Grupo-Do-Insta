@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ESTRATEGIAS, buscarFotoGratis } from '@/lib/instagram-free-scraper'
 
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
@@ -131,10 +132,43 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // ── Análise detalhada do HTML do Bing ───────────────────────────────────────
+  let bingAnalise: Record<string, unknown> = {}
+  try {
+    const res = await fetch(
+      `https://www.bing.com/search?q=site%3Ainstagram.com+%22${username}%22`,
+      {
+        headers: { 'User-Agent': UA, Accept: 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+      }
+    )
+    const html = await res.text()
+    const lower = html.toLowerCase()
+    const idxLink = lower.indexOf(`instagram.com/${username}`)
+    const idxFollowers = lower.indexOf('followers')
+    const limpar = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    bingAnalise = {
+      status: res.status,
+      tamanhoHTML: html.length,
+      temLinkPerfil: idxLink !== -1,
+      temFollowers: idxFollowers !== -1,
+      excertoLink:
+        idxLink !== -1 ? limpar(html.substring(Math.max(0, idxLink - 300), idxLink + 800)) : null,
+      excertoFollowers:
+        idxFollowers !== -1
+          ? limpar(html.substring(Math.max(0, idxFollowers - 400), idxFollowers + 400))
+          : null,
+    }
+  } catch (e) {
+    bingAnalise = { erro: e instanceof Error ? e.message : String(e) }
+  }
+
   return NextResponse.json({
     username,
     ambiente: process.env.VERCEL ? 'vercel' : 'local',
     resultados,
+    bingAnalise,
     probes,
   })
 }

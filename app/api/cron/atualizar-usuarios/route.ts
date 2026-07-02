@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * 🕐 CRON JOB: Atualizar todos os usuários
  * * Roda automaticamente TODO DIA às 3h da manhã (horário de Brasília)

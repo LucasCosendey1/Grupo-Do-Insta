@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getInstagramProfile } from '@/lib/instagram-api'
 
+export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {

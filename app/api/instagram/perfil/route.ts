@@ -19,6 +19,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { sql } from '@vercel/postgres'
 import { getInstagramProfile } from '@/lib/instagram-api'
 
+export const dynamic = 'force-dynamic'
+
 // ─── GET — Buscar perfil ──────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
