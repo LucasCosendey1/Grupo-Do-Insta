@@ -6,6 +6,7 @@
  */
 
 import { fetchImageAsBase64 } from './image-utils'
+import { getProfileGratis } from './instagram-free-scraper'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -29,11 +30,27 @@ const RAPIDAPI_HOST = 'instagram-profile1.p.rapidapi.com'
 const BASE_URL      = `https://${RAPIDAPI_HOST}/getprofile`
 
 // ─── Função principal ─────────────────────────────────────────────────────────
+// 1º tenta a cadeia GRATUITA (lib/instagram-free-scraper.ts)
+// 2º cai na RapidAPI apenas como último recurso
 
 export async function getInstagramProfile(username: string): Promise<InstagramProfile | null> {
   const clean = username.replace('@', '').trim().toLowerCase()
   if (!clean) return null
 
+  // ── Cadeia gratuita primeiro ────────────────────────────────────────────────
+  const gratis = await getProfileGratis(clean)
+  if (gratis) {
+    console.log(`🎉 [FREE] Perfil obtido via "${gratis.fonte}" (parcial: ${gratis.parcial})`)
+    return gratis.profile
+  }
+
+  // ── Último recurso: RapidAPI ────────────────────────────────────────────────
+  return getProfileViaRapidApi(clean)
+}
+
+// ─── RapidAPI (fallback pago/free-tier) ───────────────────────────────────────
+
+async function getProfileViaRapidApi(clean: string): Promise<InstagramProfile | null> {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.log(`📸 [RAPIDAPI] Buscando perfil: @${clean}`)
 

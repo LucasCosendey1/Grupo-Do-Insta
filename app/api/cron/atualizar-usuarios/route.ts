@@ -74,11 +74,11 @@ export async function GET(request: NextRequest) {
         await sql`
           UPDATE usuarios SET
             full_name = ${instagramData.fullName || username},
-            profile_pic = ${instagramData.profilePic || ''},
+            profile_pic = COALESCE(NULLIF(${instagramData.profilePic || ''}, ''), profile_pic),
             followers = ${instagramData.followers || 0},
-            following = ${instagramData.following || 0},
-            posts = ${instagramData.posts || 0},
-            biography = ${instagramData.biography || ''},
+            following = CASE WHEN ${instagramData.following || 0} = 0 THEN following ELSE ${instagramData.following || 0} END,
+            posts = CASE WHEN ${instagramData.posts || 0} = 0 THEN posts ELSE ${instagramData.posts || 0} END,
+            biography = COALESCE(NULLIF(${instagramData.biography || ''}, ''), biography),
             is_verified = ${instagramData.isVerified || false},
             is_private = ${instagramData.isPrivate || false},
             last_login = NOW()
@@ -89,11 +89,11 @@ export async function GET(request: NextRequest) {
         await sql`
           UPDATE grupo_membros SET
             full_name = ${instagramData.fullName || username},
-            profile_pic = ${instagramData.profilePic || ''},
+            profile_pic = COALESCE(NULLIF(${instagramData.profilePic || ''}, ''), profile_pic),
             followers = ${instagramData.followers || 0},
-            following = ${instagramData.following || 0},
-            posts = ${instagramData.posts || 0},
-            biography = ${instagramData.biography || ''},
+            following = CASE WHEN ${instagramData.following || 0} = 0 THEN following ELSE ${instagramData.following || 0} END,
+            posts = CASE WHEN ${instagramData.posts || 0} = 0 THEN posts ELSE ${instagramData.posts || 0} END,
+            biography = COALESCE(NULLIF(${instagramData.biography || ''}, ''), biography),
             is_verified = ${instagramData.isVerified || false},
             is_private = ${instagramData.isPrivate || false}
           WHERE username = ${username}

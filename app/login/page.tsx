@@ -137,18 +137,20 @@ function LoginPageContent() {
         console.error('⚠️ Falha na sincronização, mas continuando...')
       } else {
         console.log('✅ Dados sincronizados com sucesso!')
-      }                 // ← fecha o if
-      
-    } catch (error) {   // ← fecha o try
-    
-    // Salvar no localStorage
+      }
+
+    } catch (error) {
+      console.error('⚠️ Erro na sincronização, mas continuando...', error)
+    }
+
+    // Salvar na sessão
     sessionStorage.setItem('userProfile', JSON.stringify(selectedProfile))
-    
+
     setIsSyncing(false)
-    
+
     // Redirecionamento inteligente
     const redirectUrl = sessionStorage.getItem('redirectAfterLogin')
-    
+
     if (redirectUrl) {
       sessionStorage.removeItem('redirectAfterLogin')
       router.push(redirectUrl)

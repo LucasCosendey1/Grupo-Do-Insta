@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const row = existe ? dbResult.rows[0] : null
 
     // ── 2b. Existe E já migrado → retorna do banco direto ─────────────────────
-    if (existe && row.migrated_pic === true) {
+    if (existe && row && row.migrated_pic === true) {
       console.log(`✅ [API] Encontrado no banco (migrado) — retornando direto`)
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ── 2a/2c. Não existe OU não migrado → chamar RapidAPI ────────────────────
-    if (existe && row.migrated_pic === false) {
+    if (existe && row && row.migrated_pic === false) {
       console.log(`🔄 [API] Encontrado no banco mas NÃO migrado — atualizando via RapidAPI...`)
     } else {
       console.log(`🌐 [API] Não encontrado no banco — chamando RapidAPI...`)
@@ -80,8 +80,8 @@ export async function GET(request: NextRequest) {
 
     if (!profile) {
       // Se a API falhou mas o usuário existe no banco, retorna o que tem
-      if (existe) {
-        console.log(`⚠️  [API] RapidAPI falhou — retornando dados antigos do banco`)
+      if (existe && row) {
+        console.log(`⚠️  [API] Scraping falhou — retornando dados antigos do banco`)
         return NextResponse.json({
           success: true,
           source: 'database_fallback',
@@ -119,11 +119,13 @@ export async function GET(request: NextRequest) {
       ON CONFLICT (username)
       DO UPDATE SET
         full_name    = EXCLUDED.full_name,
-        profile_pic  = EXCLUDED.profile_pic,
-        biography    = EXCLUDED.biography,
+        -- Fontes gratuitas podem retornar dados parciais:
+        -- não sobrescrever foto/bio/posts existentes com vazio
+        profile_pic  = COALESCE(NULLIF(EXCLUDED.profile_pic, ''), usuarios.profile_pic),
+        biography    = COALESCE(NULLIF(EXCLUDED.biography, ''), usuarios.biography),
         followers    = EXCLUDED.followers,
-        following    = EXCLUDED.following,
-        posts        = EXCLUDED.posts,
+        following    = CASE WHEN EXCLUDED.following = 0 THEN usuarios.following ELSE EXCLUDED.following END,
+        posts        = CASE WHEN EXCLUDED.posts = 0 THEN usuarios.posts ELSE EXCLUDED.posts END,
         is_private   = EXCLUDED.is_private,
         is_verified  = EXCLUDED.is_verified,
         instagram_id = EXCLUDED.instagram_id,
