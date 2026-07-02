@@ -64,6 +64,11 @@ export function parseNumeroAbreviado(valor: string): number {
   return Math.round(n)
 }
 
+/** Escapa caracteres especiais p/ uso em RegExp (usernames podem ter ".") */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 /** Busca recursiva por um objeto de usuário em JSON de estrutura desconhecida */
 function acharUsuarioNoJSON(obj: unknown, depth = 0): Record<string, any> | null {
   if (depth > 12 || !obj || typeof obj !== 'object') return null
@@ -235,6 +240,64 @@ async function viaLivecounts(username: string): Promise<InstagramProfile | null>
   return perfilParcial(username, followers, extras)
 }
 
+// ─── Estratégia: Bing (snippet da busca) ──────────────────────────────────────
+// ✅ Confirmado: Bing responde 200 a partir do IP da Vercel.
+// O snippet dos resultados de perfis do Instagram traz
+// "271M Followers, 590 Following, 3.7K Posts - ..." + thumbnail (th.bing.com).
+
+async function viaBing(username: string): Promise<InstagramProfile | null> {
+  const q = encodeURIComponent(`site:instagram.com "${username}"`)
+  const res = await fetchComTimeout(
+    `https://www.bing.com/search?q=${q}&mkt=en-US&setlang=en-US&count=10`,
+    {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    }
+  )
+  if (!res.ok) return null
+  const html = await res.text()
+  const lower = html.toLowerCase()
+  const alvo = `instagram.com/${username.toLowerCase()}`
+
+  // Percorrer as ocorrências do link do perfil e procurar o snippet com "Followers"
+  let idx = lower.indexOf(alvo)
+  let tentativasRestantes = 6
+
+  while (idx !== -1 && tentativasRestantes-- > 0) {
+    const janelaRaw = html.substring(Math.max(0, idx - 800), idx + 1600)
+    const janela = janelaRaw.replace(/<[^>]+>/g, ' ') // remover tags p/ regex
+
+    const mFollowers = janela.match(/([\d][\d.,]*\s?[KMB]?)\s*Followers/i)
+    if (mFollowers) {
+      const followers = parseNumeroAbreviado(mFollowers[1])
+      if (followers > 0) {
+        const extras: Partial<InstagramProfile> = {}
+
+        const mFollowing = janela.match(/([\d][\d.,]*\s?[KMB]?)\s*Following/i)
+        const mPosts = janela.match(/([\d][\d.,]*\s?[KMB]?)\s*Posts/i)
+        if (mFollowing) extras.following = parseNumeroAbreviado(mFollowing[1])
+        if (mPosts) extras.posts = parseNumeroAbreviado(mPosts[1])
+
+        // Nome: "Cristiano Ronaldo (@cristiano)"
+        const mNome = janela.match(new RegExp(`([^,.()]{2,60}?)\\s*\\(@${escapeRegex(username)}\\)`, 'i'))
+        if (mNome) extras.fullName = mNome[1].trim()
+
+        // Thumbnail do Bing (foto de perfil)
+        const mFoto = janelaRaw.match(/https:\/\/th\.bing\.com\/th[^"'\s&]+(?:&[^"'\s]*)?/)
+        if (mFoto) extras.profilePic = mFoto[0].replace(/&amp;/g, '&')
+
+        return perfilParcial(username, followers, extras)
+      }
+    }
+    idx = lower.indexOf(alvo, idx + 1)
+  }
+  return null
+}
+
 // ─── Estratégia 5: DuckDuckGo (snippet da busca) ──────────────────────────────
 
 async function viaDuckDuckGo(username: string): Promise<InstagramProfile | null> {
@@ -271,7 +334,7 @@ async function viaDuckDuckGo(username: string): Promise<InstagramProfile | null>
   if (mPosts) extras.posts = parseNumeroAbreviado(mPosts[1])
 
   // Nome: "Nome Completo (@username)"
-  const mNome = trecho.match(new RegExp(`>([^<>]{2,80})\\s*\\(@${username}\\)`, 'i'))
+  const mNome = trecho.match(new RegExp(`>([^<>]{2,80})\\s*\\(@${escapeRegex(username)}\\)`, 'i'))
   if (mNome) extras.fullName = mNome[1].trim()
 
   return perfilParcial(username, followers, extras)
@@ -279,10 +342,12 @@ async function viaDuckDuckGo(username: string): Promise<InstagramProfile | null>
 
 // ─── Foto de perfil gratuita (unavatar.io) ────────────────────────────────────
 
+// (unavatar.io passou a exigir plano pago p/ Instagram → usamos ui-avatars
+// como último recurso: avatar com as iniciais, sempre funciona)
 export async function buscarFotoGratis(username: string): Promise<string | null> {
   try {
     return await fetchImageAsBase64(
-      `https://unavatar.io/instagram/${encodeURIComponent(username)}?fallback=false`
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&size=200&background=00bfff&color=fff&bold=true`
     )
   } catch {
     return null
@@ -293,10 +358,11 @@ export async function buscarFotoGratis(username: string): Promise<string | null>
 
 export const ESTRATEGIAS: Estrategia[] = [
   { nome: 'instagram_web_profile_info', parcial: false, fn: viaWebProfileInfo },
+  { nome: 'bing',                       parcial: true,  fn: viaBing },        // ✅ funciona na Vercel
+  { nome: 'duckduckgo',                 parcial: true,  fn: viaDuckDuckGo },
   { nome: 'storiesig',                  parcial: false, fn: viaStoriesIG },
   { nome: 'mixerno',                    parcial: true,  fn: viaMixerno },
   { nome: 'livecounts',                 parcial: true,  fn: viaLivecounts },
-  { nome: 'duckduckgo',                 parcial: true,  fn: viaDuckDuckGo },
 ]
 
 // ─── Função principal ─────────────────────────────────────────────────────────
